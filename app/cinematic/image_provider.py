@@ -50,6 +50,7 @@ class ImageGenerationProvider(ABC):
 class UnconfiguredImageProvider(ImageGenerationProvider):
     name = "unconfigured"
     model = ""
+    zero_cost = True
 
     def __init__(self, reason: str = BLOCKED_MESSAGE) -> None:
         self.reason = reason

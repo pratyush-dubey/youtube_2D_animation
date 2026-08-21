@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import argparse
 import os
 import platform
 import shutil
@@ -85,11 +86,14 @@ def collect_hardware_profile() -> HardwareProfile:
     ram_gb = round(int(ram_raw or 0) / 1024**3, 2)
     vram_gb = round(int(gpu[1] or 0) / 1024**3, 2) if len(gpu) > 1 else 0.0
     model_class = "HEAVY" if cuda_available and vram_gb >= 16 else "MEDIUM" if cuda_available and vram_gb >= 8 else "LIGHT"
-    strategy = "local_neural_image_to_3d" if model_class != "LIGHT" else "mpfb_parametric_human"
+    strategy = "local_diffusion_illustration" if model_class != "LIGHT" else "cinematic_2d25d_existing_assets"
     reason = (
-        "CUDA hardware can support a local neural 3D model."
+        "CUDA hardware can support a local illustration model."
         if model_class != "LIGHT"
-        else "No CUDA GPU with sufficient VRAM; MPFB provides a real riggable human locally without paid APIs."
+        else (
+            "No CUDA GPU with sufficient VRAM; do not download a large diffusion model. "
+            "Use approved cached artwork or assisted masks until a suitable image provider is configured."
+        )
     )
     return HardwareProfile(
         cpu=cpu_raw or platform.processor() or "unknown",
@@ -114,4 +118,11 @@ def collect_hardware_profile() -> HardwareProfile:
 
 
 if __name__ == "__main__":
-    print(json.dumps(asdict(collect_hardware_profile()), indent=2))
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", type=Path)
+    args = parser.parse_args()
+    payload = json.dumps(asdict(collect_hardware_profile()), indent=2)
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(payload, encoding="utf-8")
+    print(payload)

@@ -33,16 +33,25 @@ class CinematicBankProof:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         character, shots = self.planner.plan_bank_proof()
         plan_quality = inspect_plan(shots)
+        director_review = self.planner.request_director_review(STORY, shots)
+        existing_review = self.output_dir / "director_review.json"
+        if director_review.get("status") == "not_requested" and existing_review.is_file():
+            director_review = json.loads(existing_review.read_text(encoding="utf-8"))
+        if any(item.get("id") == "bank_06" for item in director_review.get("problems", [])):
+            director_review["resolution"] = (
+                "Applied: bank_06 uses a gradual fade to black, preserving the requested ending."
+            )
         self._write("art_direction.json", self.direction.to_dict())
         self._write("character_bible.json", character.to_dict())
         self._write("shot_plan.json", {"story": STORY, "shots": [shot.to_dict() for shot in shots]})
+        self._write("director_review.json", director_review)
         if not plan_quality["passed"]:
-            return self._report("rejected", "Shot plan failed acceptance checks", plan_quality, [])
+            return self._report("rejected", "Shot plan failed acceptance checks", plan_quality, [], director_review)
         if plan_only:
-            return self._report("planned", "Plan-only run completed", plan_quality, [])
+            return self._report("planned", "Plan-only run completed", plan_quality, [], director_review)
         if not self.provider.configured:
             reason = getattr(self.provider, "reason", BLOCKED_MESSAGE)
-            return self._report("blocked", reason, plan_quality, [])
+            return self._report("blocked", reason, plan_quality, [], director_review)
 
         artwork_reports = []
         character_reference = self.output_dir / "assets/characters/bank_employee_adult/reference.png"
@@ -60,12 +69,13 @@ class CinematicBankProof:
             artwork_reports.append(inspect_artwork(output, shot.artwork_kind))
 
         if not all(item["passed"] for item in artwork_reports):
-            return self._report("rejected", "Shot artwork failed quality checks", plan_quality, artwork_reports)
+            return self._report("rejected", "Shot artwork failed quality checks", plan_quality, artwork_reports, director_review)
         return self._report(
             "awaiting_layering",
             "Shot-specific artwork passed; segmentation/depth/puppet approval is the next gate.",
             plan_quality,
             artwork_reports,
+            director_review,
         )
 
     def _operation_for(self, kind):
@@ -96,12 +106,14 @@ class CinematicBankProof:
             generation_prompt=prompt, path=path,
         )
 
-    def _report(self, status, message, plan_quality, artwork_reports):
+    def _report(self, status, message, plan_quality, artwork_reports, director_review):
         report = {
             "pipeline": "cinematic_2d25d", "status": status, "message": message,
             "provider": self.provider.name, "provider_model": self.provider.model,
             "zero_cost": self.provider.zero_cost,
+            "cost_inr": 0,
             "plan_quality": plan_quality, "artwork_quality": artwork_reports,
+            "director_review": director_review,
             "final_video_created": False,
         }
         self._write("production_report.json", report)

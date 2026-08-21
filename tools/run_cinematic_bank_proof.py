@@ -20,7 +20,7 @@ def main():
     parser.add_argument("--plan-only", action="store_true")
     parser.add_argument("--ollama-review", action="store_true")
     args = parser.parse_args()
-    director = OllamaProvider() if args.ollama_review else None
+    director = OllamaProvider(timeout=240) if args.ollama_review else None
     proof = CinematicBankProof(args.output_dir, director=director)
     report = proof.run(plan_only=args.plan_only)
     print(json.dumps(report, indent=2))

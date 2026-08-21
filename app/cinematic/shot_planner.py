@@ -41,7 +41,7 @@ class ShotPlanner:
             ("bank_03", "medium", "2.5d", "enter", "observant", "medium", "interior medium", 55, "follow_character", 0.18, "doorway and character", ("ceiling fan", "employees", "paper movement", "light flicker"), "cut"),
             ("bank_04", "medium_close", "2d", "look_around", "focused", "medium", "medium close-up", 70, "slow_push", 0.10, "head and eyes", ("eye movement", "head turn", "breathing"), "cut"),
             ("bank_05", "closeup", "2d", "look_to_counter", "focused", "closeup", "dedicated close-up", 85, "micro_dolly", 0.06, "eyes and face", ("blink", "eye movement", "breathing"), "cut"),
-            ("bank_06", "sitting", "2.5d", "sit", "resolved", "sitting", "medium-wide sitting", 48, "lateral_slide", 0.14, "chair and character", ("sit pose sequence", "chair contact", "foreground ledger"), "fade_to_black"),
+            ("bank_06", "sitting", "2.5d", "sit", "resolved", "sitting", "medium-wide sitting", 48, "lateral_slide", 0.14, "chair and character", ("sit pose sequence", "chair contact", "foreground ledger"), "gradual_fade_to_black"),
         ]
         shots = []
         for index, item in enumerate(definitions):
@@ -70,13 +70,21 @@ class ShotPlanner:
     def request_director_review(self, story: str, shots: list[ShotPlan]) -> dict[str, Any]:
         if self.director is None:
             return {"status": "not_requested"}
+        compact = [{
+            "id": shot.shot_id, "seconds": shot.duration, "framing": shot.camera.framing,
+            "mode": shot.animation_mode, "action": shot.action, "emotion": shot.emotion,
+            "camera": shot.camera.movement, "art": shot.artwork_kind,
+            "environment_motion": shot.environment_motion, "transition": shot.transition,
+        } for shot in shots]
         prompt = (
             "You are the local AI cinematographer. Review the six-shot plan for action clarity, "
             "historical continuity, meaningful motion, and avoidance of slideshow behavior. "
-            "Do not change the 30-second timing. Return JSON with approved, problems, fixes.\n"
-            f"Story: {story}\nPlan: {json.dumps([shot.to_dict() for shot in shots])}"
+            "Do not change the 30-second timing. Return only compact JSON with approved, problems, fixes.\n"
+            f"Story: {story}\nPlan: {json.dumps(compact)}"
         )
-        review, response = self.director.generate_json(prompt, temperature=0.1, max_tokens=600)
+        review, response = self.director.generate_json(
+            prompt, temperature=0.1, max_tokens=250, max_retries=1
+        )
         review.update({"provider": response.provider, "model": response.model, "cost_inr": 0})
         return review
 

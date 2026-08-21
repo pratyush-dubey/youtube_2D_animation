@@ -17,6 +17,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        env_ignore_empty=True,
         extra="ignore",
     )
 
@@ -67,7 +68,7 @@ class Settings(BaseSettings):
     # gemini       — Google Imagen 3 via Gemini API (same key as LLM, best quality)
     image_provider: Literal[
         "placeholder", "stable_diffusion", "automatic1111", "pollinations", "stability", "gemini"
-    ] = "pollinations"
+    ] = "placeholder"
     gemini_image_model: str = "gemini-3.1-flash-image"
     sd_model_id: str = "runwayml/stable-diffusion-v1-5"
     a1111_base_url: str = "http://localhost:7860"

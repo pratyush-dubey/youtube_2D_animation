@@ -2,7 +2,7 @@
 
 Automated 2D YouTube video generation system.
 
-**Topic → Research → Script → Storyboard → Images → Voice → Music → Video → Thumbnail → SEO → YouTube Upload**
+**Script → AI direction → Shot plan → Shot-specific artwork → Layers/depth → 2D puppet + 2.5D parallax → Audio/subtitles → FFmpeg**
 
 Fully cloud-hosted, no GPU required, mostly free to run.
 
@@ -251,31 +251,47 @@ Visual quality levels:
 - `DRAFT`: illustrated assets with layered parallax preparation
 - `PRODUCTION`: illustrated assets, an 80-point quality gate, lighting, texture, rigging, and grading
 
-Render the visual acceptance test with:
+Plan the six-shot, 30-second bank acceptance test with:
 
 ```powershell
-python tools/render_forest_illustrated_test.py
+python tools/run_cinematic_bank_proof.py --plan-only
 ```
 
-The command writes `forest_illustrated_test.mp4`, `contact_sheet.jpg`, the editable
-production plan, and an asset-quality manifest under `output/forest_illustrated_test/`.
+The command writes centralized art direction, a fictional-character bible, six distinct
+shot prompts, and an acceptance report under `output/cinematic_bank_proof/`. A production
+run uses `python tools/run_cinematic_bank_proof.py`. When no suitable image backend is
+configured it stops with `Image generation provider is not configured.` It never replaces
+missing artwork with gradients, vector people, procedural mannequins, or reused full-body art.
 
-## Skeleton-driven Blender production
+Primary cinematic image configuration:
 
-Production rendering now has a provider-neutral 3D path. The application writes a
+```env
+RENDER_PROVIDER=cinematic_2d25d
+CINEMATIC_IMAGE_PROVIDER=unconfigured # automatic1111 | gemini_image | unconfigured
+ZERO_COST_MODE=true
+```
+
+`automatic1111` uses an already-running local Stable Diffusion WebUI. `gemini_image` is a
+separate optional image-generation adapter and is never confused with Gemini Flash-Lite
+reasoning. It remains blocked while `ZERO_COST_MODE=true`. Prompts, references, style,
+resolution, and model identity are content-hashed so unchanged assets are reused.
+
+## Experimental Blender path (not primary production)
+
+The prior provider-neutral 3D work is preserved for experiments. The application writes a
 deterministic `production_plan.json`; a background Blender worker constructs the scene,
 imports a provider-created character model, validates its humanoid rig, animates bones,
 directs a perspective camera, places lights, applies centralized toon materials, renders
-resumable frames, and hands the result back to FFmpeg. The illustrated 2D renderer remains
-available as `RENDER_PROVIDER=illustrated_2d`, but the production default is `blender`.
+resumable frames, and hands the result back to FFmpeg. It is not used by the cinematic
+illustrated documentary pipeline.
 
 ```env
-RENDER_PROVIDER=blender
+RENDER_PROVIDER=cinematic_2d25d
 BLENDER_PATH=C:/Program Files/Blender Foundation/Blender 5.2/blender.exe
-ART_STYLE_PRESET=CINEMATIC_TOON_3D
+ART_STYLE_PRESET=CINEMATIC_ILLUSTRATED_DOCUMENTARY
 ```
 
-Render the bounded 30-second preview proof before attempting a long documentary:
+The older 3D proof can still be run explicitly for development:
 
 ```powershell
 python tools/render_bank_clerk_3d_proof.py
@@ -285,14 +301,14 @@ The old sphere/capsule mannequin has been retired from production. There is deli
 no automatic primitive fallback. A verified reference and a reference-capable
 `Character3DProvider` are required before claiming likeness to a real person.
 
-### Production 3D character gate
+### Experimental 3D character gate
 
 The production character stack is local and has no API usage fee. Supported paths are:
 
-- `mpfb` (default): generates and rigs a parametric human locally with the GPL MPFB
+- `mpfb`: generates and rigs a parametric human locally with the GPL MPFB
   Blender extension and CC0 MakeHuman assets.
 - `local`: imports a licensed model named by `LOCAL_CHARACTER_MODEL`.
-- `blocked`: disables character generation without substituting a primitive mannequin.
+- `blocked` (default): disables 3D character generation without substituting a primitive mannequin.
 
 Run the character-only gate before a bank scene:
 
