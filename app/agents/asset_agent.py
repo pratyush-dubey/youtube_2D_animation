@@ -16,7 +16,10 @@ Image size: 1920×1080 JPEG for each scene.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import urllib.request
+from dataclasses import asdict
 from pathlib import Path
 
 import structlog
@@ -38,6 +41,11 @@ class AssetAgent(Agent):
         images_dir = context.output_dir / "images"
         images_dir.mkdir(parents=True, exist_ok=True)
         generated: dict[int, Path] = {}
+        manifest_path = images_dir / "manifest.json"
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            manifest = {}
 
         # Build a lookup: character/setting name → visual string
         char_visuals = _build_char_lookup(context.character_sheet)
@@ -47,10 +55,6 @@ class AssetAgent(Agent):
             img_path = images_dir / f"scene_{scene_id:03d}.jpg"
 
             # Resume — skip already generated
-            if img_path.exists() and img_path.stat().st_size > 1000:
-                generated[scene_id] = img_path
-                continue
-
             prompt = scene.get("image_prompt", "")
             if not prompt:
                 prompt = f"2D flat illustration for: {scene.get('visual_description', '')}"
@@ -69,11 +73,58 @@ class AssetAgent(Agent):
                 vis for name, vis in char_visuals.items()
                 if name.lower() in scene_text
             ]
-            if char_hints:
+            character_references = _scene_character_references(
+                context.character_sheet,
+                scene_text,
+                str(scene.get("character_name") or ""),
+            )
+            if scene.get("character_motion") and scene.get("character_name"):
+                position = str(scene.get("character_position", "right"))
+                prompt += (
+                    f". Environment plate only, no people or human figures. Leave open "
+                    f"foreground space on the {position} for a separately animated character"
+                )
+            elif char_hints:
                 prompt = prompt + ". Character refs: " + "; ".join(char_hints)
 
-            path = self._generate_image(prompt, img_path, scene_id)
+            prompt = _production_prompt(
+                prompt, context.style, scene.get("asset_type", "cinematic-reenactment")
+            )
+            reference_key = "|".join(
+                f"{path}:{path.stat().st_size}:{path.stat().st_mtime_ns}"
+                for path in character_references if path.exists()
+            )
+            prompt_hash = hashlib.sha256(
+                f"{prompt}|{reference_key}".encode()
+            ).hexdigest()[:16]
+            if (
+                img_path.exists()
+                and img_path.stat().st_size > 1000
+                and manifest.get(str(scene_id)) == prompt_hash
+            ):
+                self._prepare_scene_asset(scene, img_path, images_dir, context.character_sheet)
+                generated[scene_id] = img_path
+                continue
+
+            generation_references = (
+                [] if scene.get("character_motion") else character_references
+            )
+            path = self._generate_image(
+                prompt,
+                img_path,
+                scene_id,
+                generation_references,
+                visual_quality=str(scene.get("visual_quality") or "DEBUG"),
+            )
+            from app.images.editorial_compositor import enhance_structured_asset
+            path = enhance_structured_asset(
+                path, str(scene.get("asset_type", "cinematic-reenactment")), scene_id
+            )
+            self._prepare_scene_asset(scene, path, images_dir, context.character_sheet)
             generated[scene_id] = path
+            manifest[str(scene_id)] = prompt_hash
+
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
         context.images = generated
         logger.info(
@@ -83,17 +134,58 @@ class AssetAgent(Agent):
         )
         return generated
 
+    def _prepare_scene_asset(
+        self,
+        scene: dict,
+        path: Path,
+        images_dir: Path,
+        character_sheet: dict,
+    ) -> None:
+        """Quality-check illustrated art and expose its renderable layers."""
+        visual_quality = str(scene.get("visual_quality", "")).upper()
+        if visual_quality not in {"DRAFT", "PRODUCTION"}:
+            return
+
+        from app.images.production_assets import evaluate_asset, extract_environment_layers
+
+        quality = evaluate_asset(path, "environment")
+        scene["asset_quality"] = [asdict(quality)]
+        if visual_quality == "PRODUCTION" and not quality.passed:
+            raise ValueError(
+                f"Scene {scene.get('scene_id')} production artwork failed the quality gate: "
+                + ", ".join(quality.problems)
+            )
+
+        layer_dir = images_dir / "layers" / f"scene_{int(scene['scene_id']):03d}"
+        layers = extract_environment_layers(path, layer_dir)
+        scene["environment_assets"] = {
+            name: str(layer.resolve()) for name, layer in layers.items()
+        }
+        _attach_character_assets(scene, character_sheet)
+
     # ── provider dispatch ──────────────────────────────────────────────────
 
-    def _generate_image(self, prompt: str, output_path: Path, scene_id: int) -> Path:
+    def _generate_image(
+        self, prompt: str, output_path: Path, scene_id: int,
+        reference_images: list[Path] | None = None,
+        visual_quality: str = "DEBUG",
+    ) -> Path:
         provider = settings.image_provider.lower()
 
         if provider == "gemini":
             try:
-                return self._gemini_imagen(prompt, output_path, scene_id)
+                return self._gemini_imagen(
+                    prompt, output_path, scene_id, reference_images or []
+                )
             except Exception as exc:
                 logger.warning("gemini_imagen_failed", scene=scene_id, error=str(exc))
                 # Fall through to Pollinations
+
+        if reference_images:
+            # A text-only fallback may create the wrong person. Use the verified
+            # portrait itself instead of fabricating an identity.
+            from app.images.character_references import create_reference_scene
+            return create_reference_scene(reference_images[0], output_path)
 
         if provider == "stability":
             stability_key = settings.stability_api_key
@@ -111,13 +203,24 @@ class AssetAgent(Agent):
                 logger.warning("pollinations_failed", scene=scene_id, error=str(exc))
 
         # Final fallback — colored placeholder
+        if str(visual_quality).upper() != "DEBUG":
+            raise RuntimeError(
+                "Illustrated image generation failed and primitive fallback is disabled. "
+                "Use a cached illustrated asset or render this scene in explicit DEBUG mode."
+            )
         return self._placeholder(prompt, output_path, scene_id)
 
     # ── Gemini Imagen 3 ───────────────────────────────────────────────────
 
-    def _gemini_imagen(self, prompt: str, output_path: Path, scene_id: int) -> Path:
+    def _gemini_imagen(
+        self, prompt: str, output_path: Path, scene_id: int,
+        reference_images: list[Path] | None = None,
+    ) -> Path:
         from app.images.gemini_provider import GeminiImagenProvider
-        return GeminiImagenProvider().generate(prompt, output_path, seed=scene_id)
+        return GeminiImagenProvider().generate(
+            prompt, output_path, seed=scene_id,
+            reference_images=reference_images or [],
+        )
 
     # ── Stability AI ──────────────────────────────────────────────────────
 
@@ -187,6 +290,68 @@ class AssetAgent(Agent):
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+_STYLE_BIBLE = (
+    "Premium cinematic 2.5D documentary frame, realistic painterly subjects, "
+    "deep forest-green and near-black shadows, warm amber practical light, "
+    "restrained crimson danger accents, tactile film grain and paper texture, "
+    "high contrast chiaroscuro, 16:9 composition, foreground midground and "
+    "background clearly separated for parallax, historically grounded details"
+)
+
+_NEGATIVE_PROMPT = (
+    "No words, letters, captions, labels, logos, watermark, pseudo-text, UI, "
+    "photorealism, 3D render, malformed anatomy, duplicated subjects, collage grid"
+)
+
+_ASSET_DIRECTIONS = {
+    "cinematic-reenactment": (
+        "cinematic reenactment, dramatic motivated lighting, shallow depth, "
+        "human action frozen at a meaningful instant, faces natural and restrained"
+    ),
+    "archival-portrait": (
+        "single archival portrait presentation, monochrome silver-gelatin texture, "
+        "subtle torn paper edge, uncluttered evidence-table composition"
+    ),
+    "archival-footage": (
+        "documentary archival footage still, period-accurate wardrobe and location, "
+        "16mm grain, slightly imperfect exposure, no camera UI"
+    ),
+    "animated-map": (
+        "dark topographic map, accurate land silhouette, one highlighted route or region, "
+        "no place-name text, clean geographic hierarchy, subtle relief texture"
+    ),
+    "newspaper-document": (
+        "investigative document close-up, blank article-like columns with no readable text, "
+        "one amber highlight stroke, paper creases, overhead evidence-table lighting"
+    ),
+    "evidence-board": (
+        "investigative evidence-board composition, photographs and document fragments, "
+        "red thread accents, strong central clue, no readable text"
+    ),
+    "date-card": "minimal dark textured background with one central empty title-safe area",
+    "location-card": "moody aerial establishing view with clean title-safe negative space",
+    "diagram": "clean cinematic information diagram with icons and lines but no text or numbers",
+    "atmospheric-detail": (
+        "extreme close-up insert shot of one story-relevant object, tactile surface, "
+        "dramatic rim light, strong visual tension"
+    ),
+}
+
+
+def _production_prompt(prompt: str, style: str, asset_type: str) -> str:
+    """Lock every image to one art direction and caption-safe composition."""
+    requested_style = (style or "documentary").strip()
+    asset_direction = _ASSET_DIRECTIONS.get(
+        str(asset_type).lower(), _ASSET_DIRECTIONS["cinematic-reenactment"]
+    )
+    return (
+        f"{_STYLE_BIBLE}. Visual system: {asset_direction}. Tone: {requested_style}. "
+        f"Subject: {prompt.strip()}. "
+        "Keep the main subject inside the central 70 percent safe area and leave "
+        f"clean lower-third space for captions. {_NEGATIVE_PROMPT}."
+    )
+
+
 def _build_char_lookup(character_sheet: dict) -> dict[str, str]:
     """
     Return a flat dict of  name → visual_description  from the character sheet.
@@ -208,3 +373,44 @@ def _build_char_lookup(character_sheet: dict) -> dict[str, str]:
         if name and visual:
             lookup[name] = visual
     return lookup
+
+
+def _scene_character_references(
+    character_sheet: dict, scene_text: str, explicit_name: str = ""
+) -> list[Path]:
+    references: list[Path] = []
+    for entry in character_sheet.get("characters", []):
+        name = str(entry.get("name", "")).strip()
+        mentioned = bool(explicit_name and name.casefold() == explicit_name.casefold())
+        mentioned = mentioned or bool(name and name.casefold() in scene_text.casefold())
+        if not mentioned:
+            continue
+        status = str(entry.get("identity_reference_status", ""))
+        path = Path(str(entry.get("reference_image", "")))
+        if status.startswith("verified") and path.exists() and path not in references:
+            references.append(path)
+    return references
+
+
+def _attach_character_assets(scene: dict, character_sheet: dict) -> None:
+    """Attach accepted character rig metadata without inventing an identity."""
+    requested = str(scene.get("character_name") or "").casefold()
+    if not requested:
+        return
+    for entry in character_sheet.get("characters", []):
+        if str(entry.get("name") or "").casefold() != requested:
+            continue
+        rig = Path(str(entry.get("rig_manifest") or ""))
+        if rig.is_file():
+            scene["character_rig_manifest"] = str(rig.resolve())
+        expressions = {
+            str(name): str(Path(str(path)).resolve())
+            for name, path in (entry.get("expressions") or {}).items()
+            if Path(str(path)).is_file()
+        }
+        if expressions:
+            scene["character_expressions"] = expressions
+        reference = Path(str(entry.get("illustrated_reference") or ""))
+        if reference.is_file():
+            scene["character_asset"] = str(reference.resolve())
+        return

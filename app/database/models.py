@@ -153,6 +153,12 @@ class Scene(Base):
     music_mood: Mapped[str | None] = mapped_column(String(50))
     duration_seconds: Mapped[float | None] = mapped_column(Float)
     sfx_list: Mapped[list | None] = mapped_column(JSON)
+    shot_plan: Mapped[list | None] = mapped_column(JSON)
+    layer_graph: Mapped[list | None] = mapped_column(JSON)
+    animation_timeline: Mapped[dict | None] = mapped_column(JSON)
+    animation_quality: Mapped[dict | None] = mapped_column(JSON)
+    render_mode: Mapped[str | None] = mapped_column(String(40))
+    random_seed: Mapped[int | None] = mapped_column(Integer)
 
     script: Mapped[Script] = relationship(back_populates="scenes")
     assets: Mapped[list[Asset]] = relationship(back_populates="scene", cascade="all, delete-orphan")

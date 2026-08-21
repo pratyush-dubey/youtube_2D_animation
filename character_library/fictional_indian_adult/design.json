@@ -1,0 +1,27 @@
+{
+  "character_id": "fictional_indian_adult",
+  "identity": "fictional technical-test character",
+  "gender": "male",
+  "age_years": 35,
+  "heritage": "Indian",
+  "body_type": "lean average build with natural adult proportions",
+  "face": "oval face, defined jaw, natural nose and brow, expressive brown eyes",
+  "hair": "short side-parted black hair",
+  "skin": "medium warm-brown complexion",
+  "clothing": "period-neutral collared shirt, tailored dark trousers, leather shoes",
+  "style": "cinematic_stylized_3d",
+  "phenotype": {
+    "gender": 1.0,
+    "age": 0.55,
+    "muscle": 0.52,
+    "weight": 0.48,
+    "height": 0.52,
+    "proportions": 0.52,
+    "race": {
+      "asian": 0.55,
+      "african": 0.25,
+      "caucasian": 0.2
+    }
+  },
+  "disclosure": "Fictional character generated locally for a dramatic-reconstruction pipeline test."
+}

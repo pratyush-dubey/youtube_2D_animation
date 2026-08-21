@@ -1,32 +1,26 @@
 """
-Gemini Imagen image provider.
+Gemini native image provider.
 
-Uses Google's Imagen 3 model via the google-genai SDK (same SDK already
+Uses Google's current native image model via the google-genai SDK (same SDK already
 used for text generation).  No extra dependency required — just the same
 GEMINI_API_KEY that drives the LLM.
 
-Model: imagen-3.0-generate-002
-  - 1:1 / 3:4 / 4:3 / 9:16 / 16:9 aspect ratios supported
-  - Free quota: ~1 image / request on the free tier
-  - Returns base64-encoded PNG/JPEG bytes
+The model name is configured with GEMINI_IMAGE_MODEL. Generated frames are
+center-cropped to the pipeline's 1920x1080 canvas.
 
 Requires google-genai >= 1.0  (pip install google-genai)
 """
 from __future__ import annotations
 
-import base64
+import io
 from pathlib import Path
 
 import structlog
 
 logger = structlog.get_logger(__name__)
 
-# Imagen 3 model name
-_IMAGEN_MODEL = "imagen-3.0-generate-002"
-
-
 class GeminiImagenProvider:
-    """Generate images using Google Gemini Imagen 3."""
+    """Generate images using Google's configured native image model."""
 
     def __init__(self, api_key: str | None = None) -> None:
         from app.config.settings import settings
@@ -37,7 +31,10 @@ class GeminiImagenProvider:
                 "Add GEMINI_API_KEY to your .env file."
             )
 
-    def generate(self, prompt: str, output_path: Path, seed: int = 42) -> Path:
+    def generate(
+        self, prompt: str, output_path: Path, seed: int = 42,
+        reference_images: list[Path] | None = None,
+    ) -> Path:
         """
         Generate a 1920×1080 image from prompt and save to output_path.
 
@@ -56,33 +53,56 @@ class GeminiImagenProvider:
         client = genai.Client(api_key=self.api_key)
 
         # Imagen 3 supports 16:9 natively — closest to 1920×1080
-        response = client.models.generate_images(
-            model=_IMAGEN_MODEL,
-            prompt=prompt[:2000],
-            config=gtypes.GenerateImagesConfig(
-                number_of_images=1,
-                aspect_ratio="16:9",
-                # safety_filter_level: block only high-severity content
-                safety_filter_level="block_only_high",
-                person_generation="allow_adult",
+        from app.config.settings import settings
+
+        contents = [gtypes.Part.from_text(text=prompt[:4000])]
+        for reference in reference_images or []:
+            if reference.exists():
+                mime = "image/png" if reference.suffix.lower() == ".png" else "image/jpeg"
+                contents.append(
+                    gtypes.Part.from_bytes(data=reference.read_bytes(), mime_type=mime)
+                )
+        if reference_images:
+            contents[0] = gtypes.Part.from_text(
+                text=(
+                    prompt[:3300]
+                    + " Use the supplied portrait strictly as the identity reference. "
+                    "Preserve the same facial geometry, age, skin tone, hairline, and "
+                    "distinguishing features. Do not substitute or blend another face."
+                )
+            )
+
+        response = client.models.generate_content(
+            model=settings.gemini_image_model,
+            contents=contents,
+            config=gtypes.GenerateContentConfig(
+                response_modalities=["IMAGE"],
             ),
         )
 
-        if not response.generated_images:
-            raise RuntimeError("Imagen returned no images")
-
-        img_data = response.generated_images[0]
-        # The SDK returns an Image object with .image.image_bytes
-        raw_bytes = img_data.image.image_bytes
+        parts = getattr(response, "parts", None) or []
+        raw_bytes = next(
+            (
+                part.inline_data.data
+                for part in parts
+                if getattr(part, "inline_data", None)
+                and getattr(part.inline_data, "data", None)
+            ),
+            None,
+        )
+        if not raw_bytes:
+            raise RuntimeError("Gemini image model returned no image bytes")
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Resize / convert to JPEG 1920×1080 via Pillow if available
         try:
-            from PIL import Image
-            import io
+            from PIL import Image, ImageOps
             img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
-            img = img.resize((1920, 1080), Image.LANCZOS)
+            img = ImageOps.fit(
+                img, (1920, 1080), method=Image.Resampling.LANCZOS,
+                centering=(0.5, 0.5),
+            )
             img.save(str(output_path), "JPEG", quality=92)
         except ImportError:
             # Pillow not available — write raw bytes as-is

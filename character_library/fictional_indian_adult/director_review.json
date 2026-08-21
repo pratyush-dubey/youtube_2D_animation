@@ -1,0 +1,18 @@
+{
+  "approved": true,
+  "silhouette_notes": [
+    "The lean average build with natural adult proportions is well-suited for a cinematic-stylized 3D style.",
+    "Consider adding some subtle muscle definition to enhance the character's physique."
+  ],
+  "material_notes": [
+    "The medium warm-brown complexion looks realistic and fitting for an Indian heritage character.",
+    "The clothing choice is period-neutral, which is suitable for a dramatic-reconstruction pipeline test."
+  ],
+  "motion_notes": [],
+  "quality_risks": [],
+  "provider": "ollama",
+  "model": "llama3.1:8b",
+  "input_tokens": 337,
+  "output_tokens": 155,
+  "cost_inr": 0
+}

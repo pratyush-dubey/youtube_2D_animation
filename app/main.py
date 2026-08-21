@@ -258,11 +258,14 @@ def run_pipeline(topic, niche, language, duration, style, provider, upload):
     _step("Video edit", lambda: VideoEditAgent().run(context))
     _step("SEO metadata", lambda: SEOAgent(llm=llm).run(context))
     _step("Thumbnail", lambda: ThumbnailAgent(llm=llm).run(context))
-    _step("Quality check", lambda: QualityAgent().run(context))
+    quality = _step("Quality check", lambda: QualityAgent().run(context))
+    quality_passed = bool(quality.success and quality.output and quality.output.passed)
 
-    if upload and context.video_path and context.video_path.exists():
+    if upload and quality_passed and context.video_path and context.video_path.exists():
         from app.agents.youtube_agent import YouTubeAgent
         _step("YouTube upload", lambda: YouTubeAgent().run(context))
+    elif upload and not quality_passed:
+        _safe_echo("[ERR] Upload blocked because the quality gate failed.")
 
     # ── Summary ─────────────────────────────────────────────────────────────
     _safe_echo(f"\n{'='*55}")

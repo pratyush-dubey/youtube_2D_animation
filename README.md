@@ -142,11 +142,13 @@ LLM_PROVIDER=gemini            # gemini | openai | ollama
 GEMINI_API_KEY=...
 
 # Image generation
-IMAGE_PROVIDER=pollinations    # pollinations | stability | placeholder
+IMAGE_PROVIDER=pollinations    # pollinations | stability | gemini | placeholder
 STABILITY_API_KEY=             # optional
+VISUAL_QUALITY=PRODUCTION      # DEBUG | DRAFT | PRODUCTION
+ALLOW_PRIMITIVE_DEBUG_ASSETS=false
 
 # TTS
-TTS_PROVIDER=gtts              # gtts | elevenlabs | pyttsx3
+TTS_PROVIDER=edge_tts          # edge_tts | gtts | elevenlabs | pyttsx3
 ELEVENLABS_API_KEY=            # optional
 
 # Research enrichment
@@ -163,6 +165,19 @@ YOUTUBE_CLIENT_SECRET=...
 YOUTUBE_PRIVACY_STATUS=private  # always private until manually published
 AUTO_PUBLISH=false
 ```
+
+### Real-person identity references
+
+Named people are never replaced with invented faces. The character stage keeps only
+people explicitly returned by research and attempts to resolve their lead portrait and
+license metadata through Wikipedia/Wikimedia Commons. Providers with image conditioning
+receive that portrait with the generation prompt. Text-only fallbacks use the verified
+archival portrait instead of generating a different person.
+
+For a person whose Wikimedia portrait cannot be resolved, add a reference you have the
+right to use at `assets/characters/<full-name-slug>.jpg`; for example,
+`assets/characters/a-p-j-abdul-kalam.jpg`. The quality gate blocks unreferenced real-person
+character scenes. Procedural characters require `character_is_fictional: true` explicitly.
 
 ---
 
@@ -203,6 +218,122 @@ assets/music/        # CC0 background music library
 output/              # Generated video output (per project_id)
 projects/            # SQLite database + YouTube token
 tests/               # Unit + integration tests (123 passing)
+```
+
+---
+
+## Cinematic animation pipeline
+
+The renderer uses an editable, deterministic scene graph rather than holding one
+image for the duration of a scene:
+
+```text
+script -> scenes -> shots -> illustrated raster assets -> segmentation/rigging
+       -> camera + parallax + articulated character + FX + lighting -> FFmpeg -> MP4
+```
+
+Each persisted `production_plan.json` contains multiple shots, depth-sorted
+environment/character/FX/lighting layers, camera keyframes, audio clips, a random
+seed, and a pre-render animation quality score. Plans below
+`ANIMATION_QUALITY_THRESHOLD` (default `70`) are repaired before rendering. If an
+AI asset fails, production rendering rejects the asset or reuses accepted cached
+illustration. Primitive characters and scenery are available only in explicit DEBUG mode.
+
+Render modes:
+
+- `DRAFT`: low-resolution, fast iteration
+- `PREVIEW`: 960-wide animated preview
+- `FINAL`: 1080p output at 30 FPS
+
+Visual quality levels:
+
+- `DEBUG`: primitives are allowed only when `ALLOW_PRIMITIVE_DEBUG_ASSETS=true`
+- `DRAFT`: illustrated assets with layered parallax preparation
+- `PRODUCTION`: illustrated assets, an 80-point quality gate, lighting, texture, rigging, and grading
+
+Render the visual acceptance test with:
+
+```powershell
+python tools/render_forest_illustrated_test.py
+```
+
+The command writes `forest_illustrated_test.mp4`, `contact_sheet.jpg`, the editable
+production plan, and an asset-quality manifest under `output/forest_illustrated_test/`.
+
+## Skeleton-driven Blender production
+
+Production rendering now has a provider-neutral 3D path. The application writes a
+deterministic `production_plan.json`; a background Blender worker constructs the scene,
+imports a provider-created character model, validates its humanoid rig, animates bones,
+directs a perspective camera, places lights, applies centralized toon materials, renders
+resumable frames, and hands the result back to FFmpeg. The illustrated 2D renderer remains
+available as `RENDER_PROVIDER=illustrated_2d`, but the production default is `blender`.
+
+```env
+RENDER_PROVIDER=blender
+BLENDER_PATH=C:/Program Files/Blender Foundation/Blender 5.2/blender.exe
+ART_STYLE_PRESET=CINEMATIC_TOON_3D
+```
+
+Render the bounded 30-second preview proof before attempting a long documentary:
+
+```powershell
+python tools/render_bank_clerk_3d_proof.py
+```
+
+The old sphere/capsule mannequin has been retired from production. There is deliberately
+no automatic primitive fallback. A verified reference and a reference-capable
+`Character3DProvider` are required before claiming likeness to a real person.
+
+### Production 3D character gate
+
+The production character stack is local and has no API usage fee. Supported paths are:
+
+- `mpfb` (default): generates and rigs a parametric human locally with the GPL MPFB
+  Blender extension and CC0 MakeHuman assets.
+- `local`: imports a licensed model named by `LOCAL_CHARACTER_MODEL`.
+- `blocked`: disables character generation without substituting a primitive mannequin.
+
+Run the character-only gate before a bank scene:
+
+```powershell
+python tools/run_character_generation_test.py `
+  --reference assets/characters/person-front.png `
+  --reference assets/characters/person-side.png `
+  --reference assets/characters/person-3quarter.png `
+  --reference assets/characters/person-full-body.png
+```
+
+The test always writes
+`output/character_generation_test/character_quality_report.json`. With no provider it
+stops with `Production 3D character provider is not configured.` It does not create fake
+beauty renders. Blender rejects models without production-level mesh density, plausible
+bounds, UVs, textures, multiple materials, a recognizable humanoid skeleton, and facial
+bones or shape keys. Animation and the bank scene remain blocked until that report passes.
+
+Supported formats are `16:9`, `9:16`, and `1:1`.
+
+Open the real production editor after a project has a storyboard:
+
+```text
+http://localhost:8000/api/projects/<project_id>/editor
+```
+
+The editor reads and modifies the real timeline, renders animated previews, and
+supports component-specific background, character, voice, SFX, camera,
+expression, animation, and scene regeneration. API consumers can use:
+
+```text
+GET   /api/projects/<id>/production-plan
+PATCH /api/projects/<id>/scenes/<scene_id>
+POST  /api/projects/<id>/scenes/<scene_id>/preview?quality=PREVIEW
+POST  /api/projects/<id>/scenes/<scene_id>/regenerate/<component>
+```
+
+Render the deterministic 10-second forest acceptance scene with:
+
+```bash
+python tools/render_forest_animation_test.py
 ```
 
 ---

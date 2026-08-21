@@ -19,7 +19,8 @@ httpx>=0.27.0
 
 # LLM providers (install only what you use)
 # openai>=1.35.0     # pip install openai
-# google-genai>=1.0  # pip install google-genai   ← recommended (new SDK)
+google-genai>=1.0,<1.1
+google-auth<2.42
 # google-generativeai is DEPRECATED — use google-genai instead
 
 # Image processing (always needed — thumbnails, placeholder frames)
@@ -30,6 +31,7 @@ pydub>=0.25.1
 
 # TTS providers (cloud-first, no local model required)
 # gTTS is the default — free, internet-required, Google Translate TTS
+edge-tts>=7.2.0
 gtts>=2.5.1
 # ElevenLabs SDK (optional — higher quality, 10k chars/month free tier)
 # elevenlabs>=1.0.0

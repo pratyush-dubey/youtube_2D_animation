@@ -5,8 +5,8 @@ with image prompts, camera motions, transitions, and SFX cues.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
-from typing import Any
 
 import structlog
 
@@ -57,7 +57,10 @@ class StoryboardAgent(Agent):
                 data = json.loads(storyboard_path.read_text(encoding="utf-8"))
                 scenes = data.get("scenes", [])
                 if scenes:
+                    scenes = _prepare_scenes(scenes)
+                    scenes = _ensure_script_sections(scenes, context.script, context.topic)
                     context.storyboard = scenes
+                    _write_storyboard(storyboard_path, scenes)
                     logger.info("storyboard_loaded_from_cache", project=context.project_id)
                     return scenes
             except Exception:
@@ -81,7 +84,10 @@ class StoryboardAgent(Agent):
         )
 
         raw, response = self.llm.generate_json(
-            prompt, schema_hint="Storyboard", temperature=0.6, max_tokens=4096
+            prompt,
+            schema_hint="Storyboard",
+            temperature=0.55,
+            max_tokens=settings.llm_max_tokens,
         )
         self.cost_tracker.record(
             provider=self.llm.provider_name,
@@ -97,12 +103,10 @@ class StoryboardAgent(Agent):
             scenes = raw if isinstance(raw, list) else []
 
         # Validate and normalise each scene
-        scenes = [_normalise_scene(s, i) for i, s in enumerate(scenes, 1)]
+        scenes = _prepare_scenes(scenes)
+        scenes = _ensure_script_sections(scenes, script, topic)
 
-        storyboard_path.write_text(
-            json.dumps({"total_scenes": len(scenes), "scenes": scenes}, indent=2),
-            encoding="utf-8",
-        )
+        _write_storyboard(storyboard_path, scenes)
         context.storyboard = scenes
         logger.info("storyboard_complete", project=context.project_id, scenes=len(scenes))
         return scenes
@@ -178,5 +182,258 @@ def _normalise_scene(s: dict, idx: int) -> dict:
         "text_overlay": s.get("text_overlay"),
         "transition": s.get("transition", "cut"),
         "music_mood": s.get("music_mood", "calm"),
+        "voice_emotion": _resolve_voice_emotion(
+            s.get("voice_emotion") or s.get("music_mood")
+        ),
         "sfx": s.get("sfx", []),
+        "asset_type": _resolve_asset_type(s, idx),
+        "overlay_style": s.get("overlay_style", "location"),
+        "motion_intensity": s.get("motion_intensity", "medium"),
+        "accent_color": s.get("accent_color", "amber"),
+        "character_name": s.get("character_name"),
+        "character_action": s.get("character_action"),
+        "character_motion": _resolve_character_motion(s.get("character_motion")),
+        "character_position": _resolve_character_position(s.get("character_position")),
+        "character_scale": _resolve_character_scale(s.get("character_scale")),
+        "character_is_fictional": bool(s.get("character_is_fictional", False)),
+        "shots": s.get("shots", []),
+        "layers": s.get("layers", []),
+        "render_quality": str(s.get("render_quality", "FINAL")).upper(),
+        "visual_quality": str(s.get("visual_quality", settings.visual_quality)).upper(),
+        "parent_scene_id": s.get("parent_scene_id", s.get("scene_id", idx)),
+        "visual_beat": int(s.get("visual_beat", 1)),
     }
+
+
+def _resolve_character_motion(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    from app.video.character_motion import CHARACTER_MOTIONS
+    key = str(raw).strip().lower().replace("_", "-")
+    return key if key in CHARACTER_MOTIONS else "idle-breathe"
+
+
+def _resolve_voice_emotion(raw: str | None) -> str:
+    allowed = {
+        "mysterious", "tense", "uplifting", "calm", "dramatic",
+        "curious", "serious", "hopeful", "eerie",
+    }
+    key = str(raw or "serious").strip().lower()
+    return key if key in allowed else "serious"
+
+
+def _resolve_character_position(raw: str | None) -> str:
+    key = str(raw or "right").strip().lower()
+    return key if key in {"left", "center", "right"} else "right"
+
+
+def _resolve_character_scale(raw) -> float:
+    try:
+        return min(max(float(raw or 0.72), 0.35), 1.0)
+    except (TypeError, ValueError):
+        return 0.72
+
+
+_SHOT_TYPES = (
+    "wide establishing shot",
+    "medium subject shot",
+    "close-up detail",
+    "top-down explanatory view",
+    "dramatic silhouette composition",
+    "diagram-like visual metaphor",
+)
+
+
+def _write_storyboard(path: Path, scenes: list[dict]) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "storyboard_version": 3,
+                "total_scenes": len(scenes),
+                "total_duration_seconds": round(
+                    sum(float(s.get("duration_seconds", 0)) for s in scenes), 2
+                ),
+                "scenes": scenes,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _prepare_scenes(raw_scenes: list[dict]) -> list[dict]:
+    """Normalise and turn narration paragraphs into short visual beats.
+
+    A single generated image should not carry a 20-45 second paragraph.  Each
+    beat is capped at roughly 18 spoken words (about 5-8 seconds), receives a
+    distinct composition instruction, and keeps the original narration order.
+    """
+    prepared: list[dict] = []
+    for source_index, raw in enumerate(raw_scenes, 1):
+        scene = _normalise_scene(raw, source_index)
+        narration = scene["narration"].strip()
+        chunks = _split_narration(narration)
+        if not chunks:
+            chunks = [""]
+
+        source_duration = max(float(scene["duration_seconds"]), 3.0)
+        total_words = max(sum(len(c.split()) for c in chunks), 1)
+        for beat_index, chunk in enumerate(chunks, 1):
+            beat = dict(scene)
+            beat["scene_id"] = len(prepared) + 1
+            beat["parent_scene_id"] = scene["parent_scene_id"]
+            beat["visual_beat"] = beat_index
+            beat["narration"] = chunk
+            word_share = max(len(chunk.split()), 1) / total_words
+            beat["duration_seconds"] = round(
+                min(8.0, max(3.0, source_duration * word_share)), 2
+            )
+            shot = _SHOT_TYPES[(len(prepared)) % len(_SHOT_TYPES)]
+            if len(chunks) > 1:
+                beat["visual_description"] = (
+                    f"{scene['visual_description']} Visual beat: {chunk} Composition: {shot}."
+                ).strip()
+                beat["image_prompt"] = (
+                    f"{scene['image_prompt']}. Show this exact visual beat: {chunk}. "
+                    f"Composition: {shot}; clear focal subject; readable silhouette; no text."
+                )
+                beat["text_overlay"] = scene["text_overlay"] if beat_index == 1 else None
+                beat["sfx"] = scene["sfx"] if beat_index == 1 else []
+                beat["transition"] = scene["transition"] if beat_index == 1 else "cut"
+                beat["animation_type"] = _MOTION_CYCLE[
+                    (len(prepared)) % len(_MOTION_CYCLE)
+                ]
+                beat["asset_type"] = _beat_asset_type(scene["asset_type"], beat_index)
+            from app.video.timeline import build_production_scene
+            prepared.append(build_production_scene(beat))
+    return prepared
+
+
+def _split_narration(text: str, max_words: int = 18) -> list[str]:
+    """Split prose at punctuation, then at clauses, without dropping words."""
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return []
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    chunks: list[str] = []
+    for sentence in sentences:
+        words = sentence.split()
+        while len(words) > max_words:
+            split_at = max_words
+            for i in range(max_words, max(7, max_words // 2), -1):
+                if words[i - 1].endswith((",", ";", ":", "—", "–")):
+                    split_at = i
+                    break
+            chunks.append(" ".join(words[:split_at]).strip())
+            words = words[split_at:]
+        if words:
+            tail = " ".join(words).strip()
+            if chunks and len(tail.split()) < 5 and len(chunks[-1].split()) + len(words) <= 22:
+                chunks[-1] = f"{chunks[-1]} {tail}"
+            else:
+                chunks.append(tail)
+    return chunks
+
+
+def _ensure_script_sections(
+    scenes: list[dict], script: ScriptResult, topic: str
+) -> list[dict]:
+    """Add deterministic visual beats for any section the LLM omitted."""
+    all_tokens = _text_tokens(" ".join(s.get("narration", "") for s in scenes))
+    missing = []
+    for section in script.sections:
+        expected = _text_tokens(section.narration)
+        coverage = len(expected & all_tokens) / max(len(expected), 1)
+        if coverage < 0.65:
+            missing.append(section)
+    if not missing:
+        return scenes
+
+    # Keep the conclusion/CTA last when an old cached storyboard omitted a body section.
+    insert_at = len(scenes)
+    closing_tokens = _text_tokens(f"{script.conclusion} {script.call_to_action}")
+    for index, scene in enumerate(scenes):
+        scene_tokens = _text_tokens(scene.get("narration", ""))
+        if scene_tokens and len(scene_tokens & closing_tokens) / len(scene_tokens) >= 0.5:
+            insert_at = index
+            break
+
+    additions: list[dict] = []
+    for section in missing:
+        raw = {
+            "scene_id": section.id,
+            "duration_seconds": float(section.duration_seconds),
+            "narration": section.narration,
+            "visual_description": (
+                f"A sequence of accurate editorial visuals explaining {section.title}."
+            ),
+            "image_prompt": (
+                f"{topic} — {section.title}. Visualize this exact fact: {section.narration}"
+            ),
+            "animation_type": "ken-burns",
+            "camera_motion": "slow-zoom-in",
+            "text_overlay": section.title,
+            "transition": "dissolve",
+            "music_mood": "curious",
+            "sfx": ["whoosh"],
+        }
+        additions.extend(_prepare_scenes([raw]))
+
+    merged = scenes[:insert_at] + additions + scenes[insert_at:]
+    for scene_id, scene in enumerate(merged, 1):
+        scene["scene_id"] = scene_id
+    logger.warning(
+        "storyboard_sections_recovered",
+        missing=[section.title for section in missing],
+        added_beats=len(additions),
+    )
+    return merged
+
+
+def _text_tokens(text: str) -> set[str]:
+    stop = {"the", "and", "for", "that", "with", "from", "this", "into", "are", "was"}
+    return {
+        token for token in re.findall(r"[a-z0-9]+", str(text).lower())
+        if len(token) > 2 and token not in stop
+    }
+
+
+_ASSET_TYPES = {
+    "cinematic-reenactment", "archival-portrait", "archival-footage",
+    "animated-map", "newspaper-document", "evidence-board", "date-card",
+    "location-card", "diagram", "atmospheric-detail",
+}
+
+
+def _resolve_asset_type(scene: dict, idx: int) -> str:
+    raw = str(scene.get("asset_type", "")).strip().lower().replace("_", "-")
+    if raw in _ASSET_TYPES:
+        return raw
+    text = f"{scene.get('narration', '')} {scene.get('visual_description', '')}".lower()
+    if any(word in text for word in ("map", "route", "border", "country", "city", "state")):
+        return "animated-map"
+    if any(word in text for word in ("newspaper", "report", "article", "document", "file")):
+        return "newspaper-document"
+    if any(word in text for word in ("timeline", "date", "year", "century", "older")):
+        return "date-card"
+    if any(word in text for word in ("portrait", "photograph", "archival", "historical")):
+        return "archival-portrait"
+    cycle = (
+        "cinematic-reenactment", "atmospheric-detail", "archival-footage",
+        "evidence-board", "cinematic-reenactment", "animated-map",
+    )
+    return cycle[(idx - 1) % len(cycle)]
+
+
+def _beat_asset_type(parent_type: str, beat_index: int) -> str:
+    if beat_index == 1:
+        return parent_type
+    alternates = {
+        "cinematic-reenactment": ("atmospheric-detail", "archival-footage", "evidence-board"),
+        "archival-portrait": ("newspaper-document", "cinematic-reenactment"),
+        "newspaper-document": ("evidence-board", "archival-footage"),
+        "animated-map": ("location-card", "cinematic-reenactment"),
+        "date-card": ("archival-footage", "newspaper-document"),
+    }
+    choices = alternates.get(parent_type, ("cinematic-reenactment", "atmospheric-detail"))
+    return choices[(beat_index - 2) % len(choices)]

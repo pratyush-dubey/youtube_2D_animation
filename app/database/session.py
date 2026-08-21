@@ -42,6 +42,26 @@ SessionLocal = sessionmaker(
 def init_db() -> None:
     """Create all tables if they don't exist. Safe to call multiple times."""
     Base.metadata.create_all(bind=engine)
+    _migrate_scene_timeline_columns()
+
+
+def _migrate_scene_timeline_columns() -> None:
+    """Small idempotent SQLite migration for existing installations."""
+    additions = {
+        "shot_plan": "JSON",
+        "layer_graph": "JSON",
+        "animation_timeline": "JSON",
+        "animation_quality": "JSON",
+        "render_mode": "VARCHAR(40)",
+        "random_seed": "INTEGER",
+    }
+    with engine.begin() as connection:
+        existing = {
+            row[1] for row in connection.exec_driver_sql("PRAGMA table_info(scenes)").fetchall()
+        }
+        for name, sql_type in additions.items():
+            if name not in existing:
+                connection.exec_driver_sql(f"ALTER TABLE scenes ADD COLUMN {name} {sql_type}")
 
 
 @contextmanager

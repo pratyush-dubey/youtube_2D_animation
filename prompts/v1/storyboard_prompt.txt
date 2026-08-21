@@ -1,4 +1,5 @@
-You are a storyboard artist and video director specialising in 2D animated YouTube videos.
+You are a storyboard artist and video director specialising in premium cinematic
+mixed-media documentary videos.
 
 Topic: {topic}
 Style: {style}
@@ -11,16 +12,23 @@ Script:
 {script_json}
 
 Convert this script into a detailed scene-by-scene storyboard for a 2D animated video.
-Each scene corresponds to roughly 5-15 seconds of narration.
+Each scene is one visual beat containing 8-18 spoken words and lasting roughly 3-8 seconds.
+Change the visual whenever narration introduces a new person, place, object, date,
+comparison, cause, or consequence. A 4-minute script normally needs 35-55 scenes.
 
 For each scene, decide on:
-- A 2D visual (illustration, map, text graphic, icon, diagram, infographic)
+- A visual system: cinematic reenactment, archival portrait/footage, animated map,
+  newspaper/document evidence, evidence board, date/location card, or diagram
 - A simple camera movement (Ken Burns zoom-in, pan-left, pan-right, static, slow-zoom-out)
 - A transition into the next scene (cut, fade, wipe-right, dissolve, zoom-through)
 - An animation style (pan-across, zoom-in, parallax, text-reveal, icon-pop, slide-in)
 - Text overlay if needed (location name, statistic, person's name, chapter title)
 - Music mood (mysterious, tense, uplifting, calm, dramatic, curious)
 - Sound effects if appropriate
+- Two to five distinct shots with varied framing, camera choreography, physical
+  action, expression, and pacing. A scene is never one held image.
+- Generate image_prompt as an environment/prop plate, not a finished composition;
+  characters, atmosphere, lighting, and foreground elements are separate layers.
 
 Return a JSON object with EXACTLY this structure:
 {
@@ -38,7 +46,30 @@ Return a JSON object with EXACTLY this structure:
       "text_overlay": null,
       "transition": "cut",
       "music_mood": "mysterious",
-      "sfx": []
+      "voice_emotion": "tense",
+      "sfx": [],
+      "asset_type": "cinematic-reenactment",
+      "overlay_style": "headline",
+      "motion_intensity": "medium",
+      "accent_color": "amber",
+      "character_name": "<exact character-sheet name or null>",
+      "character_action": "<short physical action or null>",
+      "character_motion": "walk-in-left",
+      "character_position": "right",
+      "character_scale": 0.72,
+      "character_is_fictional": false,
+      "shots": [
+        {
+          "duration": 2.5,
+          "shot_type": "wide",
+          "camera": {"move": "slow_push", "easing": "ease_in_out"},
+          "characters": ["<exact character-sheet name>"],
+          "action": "walk",
+          "expression": "neutral",
+          "subject": "story-relevant subject",
+          "transition": "cut"
+        }
+      ]
     }
   ]
 }
@@ -47,25 +78,56 @@ Animation types allowed (use EXACTLY these strings, vary them across scenes):
   zoom-in, zoom-out, pan-left, pan-right, pan-up, pan-down, ken-burns, drift-right, static
 IMPORTANT: Do NOT use "static" for every scene. Vary the animation_type so each scene has movement.
 Suggested pattern: alternate between zoom-in, pan-right, ken-burns, zoom-out, pan-left, drift-right.
+Character motions allowed: idle-breathe, walk-in-left, walk-in-right, walk-across,
+slow-drift, reveal. Use a recurring character in selected reenactment/explanation
+beats, not every scene. Alternate character scenes with maps, evidence, and archival shots.
+When character_motion is set, image_prompt must describe an environment plate with no
+people because the compositor adds the character as a separately animated foreground layer.
 Camera motions allowed: slow-zoom-in, slow-zoom-out, pan-left, pan-right, pan-up, pan-down, static, handheld
+Shot types allowed: wide, medium, closeup, insert, over_shoulder, rear
+Shot camera moves allowed: slow_push, dolly_in, dolly_out, pan_left, pan_right,
+pan_up, pan_down, track_character, follow_character, handheld, shake, tilt,
+orbit_simulation. Reserve static for an intentional insert and never make every
+shot static.
 Transitions allowed: cut, fade, dissolve, wipe-right, wipe-left, zoom-through, cross-dissolve
 Music moods allowed: mysterious, tense, uplifting, calm, dramatic, curious, serious, hopeful, eerie
+Voice emotions use the same values. Choose voice_emotion for the spoken intent of each
+beat, and vary it with the story arc; do not mark every scene calm or mysterious.
 
 Image prompt guidelines:
-- Style: "2D flat illustration, editorial style, high detail"
-- Avoid: photorealistic, 3D render, watermark, text in image
-- Include: color palette, composition, lighting, subject
+- Use one locked art direction throughout: "cinematic 2.5D documentary frame,
+  realistic painterly subjects, deep forest-green and black shadows, warm amber
+  practical light, restrained crimson danger accents, film grain, tactile paper texture"
+- Mix reenactments with maps, archival portraits, close details, evidence documents,
+  and typographic cards. Never use the same visual system for more than two shots.
+- Avoid: photorealism, 3D render, collage, watermark, letters, captions, labels,
+  pseudo-text, malformed anatomy, duplicate subjects
+- Include: exact subject/location, distinctive visual features, shot size, palette,
+  composition, lighting, foreground, midground, background, and a clear focal subject
+- Never ask the image model to draw readable text. Put words in text_overlay.
 - CRITICAL: Every image_prompt MUST begin with the topic name ("{topic}") so
   the image generation model stays anchored to the correct subject.
   Example: "{topic} — 2D flat illustration of ..."
 - CHARACTER CONSISTENCY: When a character from the character sheet appears in a scene,
   copy their exact "visual" description verbatim into the image_prompt.
   This ensures the same person looks identical across all scenes.
+- IDENTITY SAFETY: Never invent a face for a named person. Only assign character_name
+  when that exact character-sheet entry has identity_reference_status beginning with
+  "verified". Otherwise use archival documents, locations, or objects until a reference
+portrait is supplied.
+- character_is_fictional must remain false for every person found by research. Set it
+  true only when the source material explicitly says the character is fictional.
 
 SFX examples: ["whoosh", "impact", "chime", "ambient-space", "thunder", "wind"]
 
 CRITICAL RULES:
 - narration in each scene must be a substring or paraphrase of the original script — do not add new facts
+- include every script section in order; never omit the final section or conclusion
+- no scene may exceed 20 spoken words or 8 seconds
+- do not reuse the same composition in adjacent scenes
+- asset_type must be one of: cinematic-reenactment, archival-portrait,
+  archival-footage, animated-map, newspaper-document, evidence-board, date-card,
+  location-card, diagram, atmospheric-detail
 - scene durations must sum to approximately total_duration_seconds
 - image_prompt must be specific enough to generate a useful image
 - Return ONLY the JSON object. No markdown, no explanation.

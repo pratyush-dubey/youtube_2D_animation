@@ -5,7 +5,7 @@ Uses LLM with a validated Pydantic output schema.
 from __future__ import annotations
 
 import json
-from typing import Any
+import re
 
 import structlog
 
@@ -103,7 +103,7 @@ class ScriptGenerator:
             output_tokens=response.output_tokens,
         )
 
-        result = ScriptResult.model_validate(raw)
+        result = _align_numbered_title(ScriptResult.model_validate(raw))
         self._save(result)
 
         logger.info(
@@ -129,7 +129,7 @@ class ScriptGenerator:
             if row is None or row.raw_json is None:
                 return None
             try:
-                return ScriptResult.model_validate(row.raw_json)
+                return _align_numbered_title(ScriptResult.model_validate(row.raw_json))
             except Exception:
                 return None
 
@@ -158,3 +158,17 @@ class ScriptGenerator:
                         duration_seconds=float(section.duration_seconds),
                     )
                 )
+
+
+def _align_numbered_title(result: ScriptResult) -> ScriptResult:
+    """Never promise a numbered list that the generated script does not contain."""
+    match = re.match(r"^(\s*)(\d+)(\b.*)$", result.title)
+    if not match or not result.sections:
+        return result
+    actual = len(result.sections)
+    promised = int(match.group(2))
+    if promised == actual:
+        return result
+    title = f"{match.group(1)}{actual}{match.group(3)}"
+    logger.warning("numbered_title_aligned", promised=promised, actual=actual, title=title)
+    return result.model_copy(update={"title": title})

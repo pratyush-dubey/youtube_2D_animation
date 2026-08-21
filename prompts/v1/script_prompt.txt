@@ -37,6 +37,8 @@ Return a JSON object with EXACTLY this structure:
 }
 
 CRITICAL RULES:
+- If the title starts with a number (for example "10 Places"), the sections array must
+  contain exactly that many distinct promised items. Otherwise use a non-numbered title.
 - Only state facts that appear in the research data. Do not invent new facts.
 - If research data is limited, acknowledge what is known and what remains uncertain.
 - The hook must NOT start with "In this video" or "Today we're going to".

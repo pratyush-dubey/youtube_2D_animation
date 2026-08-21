@@ -81,6 +81,7 @@ def _run_pipeline_job(
 
         from app.agents.research_agent import ResearchAgent
         from app.agents.script_agent import ScriptAgent
+        from app.agents.character_agent import CharacterAgent
         from app.agents.storyboard_agent import StoryboardAgent
         from app.agents.asset_agent import AssetAgent
         from app.agents.voice_agent import VoiceAgent
@@ -98,6 +99,7 @@ def _run_pipeline_job(
         if context.script is None:
             raise RuntimeError("Script stage failed")
 
+        _step("characters", lambda: CharacterAgent(llm=llm).run(context))
         _step("storyboard", lambda: StoryboardAgent(llm=llm).run(context))
         _step("images",     lambda: AssetAgent().run(context))
         _step("voice",      lambda: VoiceAgent().run(context))
@@ -105,7 +107,13 @@ def _run_pipeline_job(
         _step("video",      lambda: VideoEditAgent().run(context))
         _step("seo",        lambda: SEOAgent(llm=llm).run(context))
         _step("thumbnail",  lambda: ThumbnailAgent(llm=llm).run(context))
-        _step("quality",    lambda: QualityAgent().run(context))
+        quality = _step("quality", lambda: QualityAgent().run(context))
+        if not quality.success or not quality.output or not quality.output.passed:
+            failed = [
+                check["check"] for check in getattr(quality.output, "checks", [])
+                if not check["passed"]
+            ]
+            raise RuntimeError(f"Quality gate failed: {', '.join(failed) or quality.error}")
 
         if (
             context.video_path

@@ -9,10 +9,11 @@ Cloud providers (no Ollama):
 """
 from __future__ import annotations
 
-import io
-import os
+import asyncio
+import hashlib
+import json
+import subprocess
 from pathlib import Path
-from typing import Any
 
 import structlog
 
@@ -33,22 +34,48 @@ class VoiceAgent(Agent):
         audio_dir = context.output_dir / "audio" / "narration"
         audio_dir.mkdir(parents=True, exist_ok=True)
         narration: dict[int, Path] = {}
+        manifest_path = audio_dir / "manifest.json"
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            manifest = {}
 
         provider = getattr(settings, "tts_provider", "gtts")
 
-        for scene in context.storyboard:
+        total_scenes = len(context.storyboard)
+        for scene_index, scene in enumerate(context.storyboard):
             scene_id = scene["scene_id"]
             text = scene.get("narration", "").strip()
             if not text:
                 continue
 
+            profile = _delivery_profile(
+                scene,
+                scene_index=scene_index,
+                total_scenes=total_scenes,
+                base_speed=float(getattr(settings, "tts_speed", 1.10)),
+            )
+
             out_path = audio_dir / f"scene_{scene_id:03d}.mp3"
-            if out_path.exists() and out_path.stat().st_size > 500:
+            voice_key = (
+                f"emotion-v3:{provider}:{getattr(settings, 'tts_voice', 'en')}:"
+                f"{json.dumps(profile, sort_keys=True)}:{text}"
+            )
+            voice_hash = hashlib.sha256(voice_key.encode("utf-8")).hexdigest()[:16]
+            if (
+                out_path.exists()
+                and out_path.stat().st_size > 500
+                and manifest.get(str(scene_id)) == voice_hash
+            ):
                 narration[scene_id] = out_path
                 continue
 
-            path = self._synthesize(text, out_path, provider)
+            path = self._synthesize(text, out_path, provider, profile)
+            path = self._master_voice(path, profile)
             narration[scene_id] = path
+            manifest[str(scene_id)] = voice_hash
+
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
         context.narration_files = narration
         logger.info(
@@ -61,7 +88,16 @@ class VoiceAgent(Agent):
 
     # ── providers ─────────────────────────────────────────────────────────
 
-    def _synthesize(self, text: str, output_path: Path, provider: str) -> Path:
+    def _synthesize(
+        self, text: str, output_path: Path, provider: str,
+        profile: dict | None = None,
+    ) -> Path:
+        if provider == "edge_tts":
+            try:
+                return self._edge_tts(text, output_path, profile)
+            except Exception as exc:
+                logger.warning("edge_tts_failed", error=str(exc))
+
         if provider == "elevenlabs":
             try:
                 return self._elevenlabs(text, output_path)
@@ -82,6 +118,72 @@ class VoiceAgent(Agent):
             output_path.write_bytes(b"")  # empty placeholder
             return output_path
 
+    def _edge_tts(
+        self, text: str, output_path: Path, profile: dict | None = None
+    ) -> Path:
+        """Generate neural narration using a scene-specific emotional profile."""
+        import edge_tts
+
+        configured = str(getattr(settings, "tts_voice", "")).strip()
+        voice = configured if "Neural" in configured else "en-IN-PrabhatNeural"
+        profile = profile or _delivery_profile(
+            {}, 0, 1, float(getattr(settings, "tts_speed", 1.10))
+        )
+        rate = f"{round((float(profile['rate']) - 1.0) * 100):+d}%"
+
+        async def _save() -> None:
+            communicate = edge_tts.Communicate(
+                text=_spoken_text(text, str(profile.get("mood", "serious"))),
+                voice=voice,
+                rate=rate,
+                pitch=f"{int(profile['pitch_hz']):+d}Hz",
+                volume=f"{int(profile['volume_percent']):+d}%",
+            )
+            await communicate.save(str(output_path))
+
+        asyncio.run(_save())
+        if not output_path.exists() or output_path.stat().st_size < 500:
+            raise RuntimeError("Edge TTS returned no usable audio")
+        return output_path
+
+    def _master_voice(self, path: Path, profile: dict) -> Path:
+        """Tighten pauses and add broadcast presence without clipping emotion."""
+        if not path.exists() or path.stat().st_size < 500:
+            return path
+        mastered = path.with_name(f"{path.stem}.master.mp3")
+        tempo = float(profile.get("post_tempo", 1.0))
+        filters = [
+            "silenceremove=start_periods=1:start_duration=0.04:start_threshold=-48dB",
+            "areverse",
+            "silenceremove=start_periods=1:start_duration=0.12:start_threshold=-48dB",
+            "areverse",
+        ]
+        if abs(tempo - 1.0) > 0.005:
+            filters.append(f"atempo={tempo:.3f}")
+        filters.extend([
+            "highpass=f=75",
+            "lowpass=f=13000",
+            "acompressor=threshold=0.12:ratio=2.4:attack=8:release=140:makeup=1.35",
+            "loudnorm=I=-16:TP=-1.5:LRA=7",
+        ])
+        try:
+            subprocess.run(
+                [
+                    settings.ffmpeg_path, "-y", "-hide_banner", "-loglevel", "error",
+                    "-i", str(path), "-af", ",".join(filters),
+                    "-codec:a", "libmp3lame", "-b:a", "128k", str(mastered),
+                ],
+                check=True, capture_output=True, text=True,
+            )
+            if mastered.exists() and mastered.stat().st_size > 500:
+                mastered.replace(path)
+        except Exception as exc:
+            logger.warning("voice_mastering_failed", error=str(exc))
+        finally:
+            if mastered.exists():
+                mastered.unlink()
+        return path
+
     def _elevenlabs(self, text: str, output_path: Path) -> Path:
         import urllib.request, json as _json
         api_key = getattr(settings, "elevenlabs_api_key", "")
@@ -90,8 +192,13 @@ class VoiceAgent(Agent):
             raise ValueError("ELEVENLABS_API_KEY not set")
         payload = _json.dumps({
             "text": text,
-            "model_id": "eleven_monolingual_v1",
-            "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+            "model_id": "eleven_multilingual_v2",
+            "voice_settings": {
+                "stability": 0.32,
+                "similarity_boost": 0.82,
+                "style": 0.48,
+                "use_speaker_boost": True,
+            },
         }).encode()
         req = urllib.request.Request(
             f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
@@ -105,6 +212,47 @@ class VoiceAgent(Agent):
         with urllib.request.urlopen(req, timeout=30) as resp:
             output_path.write_bytes(resp.read())
         return output_path
+
+
+_MOOD_DELIVERY = {
+    "tense": {"speed": 0.07, "pitch": 1, "volume": 4},
+    "dramatic": {"speed": 0.055, "pitch": -1, "volume": 4},
+    "mysterious": {"speed": 0.025, "pitch": -3, "volume": 2},
+    "eerie": {"speed": 0.015, "pitch": -5, "volume": 1},
+    "curious": {"speed": 0.045, "pitch": 2, "volume": 2},
+    "uplifting": {"speed": 0.075, "pitch": 3, "volume": 3},
+    "hopeful": {"speed": 0.055, "pitch": 2, "volume": 2},
+    "serious": {"speed": 0.035, "pitch": -2, "volume": 2},
+    "calm": {"speed": 0.0, "pitch": -1, "volume": 0},
+}
+
+
+def _delivery_profile(
+    scene: dict, scene_index: int, total_scenes: int, base_speed: float
+) -> dict:
+    mood = str(scene.get("voice_emotion") or scene.get("music_mood") or "serious").lower()
+    tuning = _MOOD_DELIVERY.get(mood, _MOOD_DELIVERY["serious"])
+    intensity = str(scene.get("motion_intensity", "medium")).lower()
+    intensity_boost = {"low": -0.01, "medium": 0.0, "high": 0.025}.get(intensity, 0.0)
+    hook_boost = 0.035 if scene_index == 0 else 0.0
+    conclusion_boost = 0.015 if total_scenes > 1 and scene_index == total_scenes - 1 else 0.0
+    rate = min(max(base_speed + tuning["speed"] + intensity_boost + hook_boost + conclusion_boost, 0.92), 1.24)
+    return {
+        "mood": mood,
+        "rate": round(rate, 3),
+        "pitch_hz": tuning["pitch"],
+        "volume_percent": tuning["volume"],
+        "post_tempo": 1.0,
+    }
+
+
+def _spoken_text(text: str, mood: str) -> str:
+    """Remove pause-heavy punctuation while retaining natural sentence cues."""
+    spoken = " ".join(str(text).replace("…", ".").replace("...", ".").split())
+    spoken = spoken.replace(";", ",").replace(" — ", ", ").replace(" – ", ", ")
+    if mood in {"tense", "dramatic"} and spoken.endswith("?"):
+        return spoken
+    return spoken
 
     def _gtts(self, text: str, output_path: Path) -> Path:
         from gtts import gTTS

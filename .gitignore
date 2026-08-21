@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+
+.tools/
+*.blend
+*.blend1
+*.zip
+*.exe
+
+node_modules/
+__pycache__/
+dist/
+build/
+renders/
+output/
+tmp/

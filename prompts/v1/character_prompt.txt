@@ -1,4 +1,4 @@
-You are a character designer for a 2D animated documentary YouTube video.
+You are a character designer for a premium cinematic 2D documentary YouTube video.
 
 Topic: {topic}
 Style: {style}
@@ -13,9 +13,14 @@ For each character or symbol, provide a detailed description that an AI image ge
 
 Rules:
 - Be very specific: clothing colors, hair, skin tone, age, build, distinguishing features
+- Designs must read clearly as separate foreground cutout characters over cinematic plates
+- Give recurring characters one unmistakable silhouette and one restrained accent color
 - Descriptions must be usable verbatim as part of an image prompt
 - Keep descriptions under 60 words each
 - Only include people explicitly mentioned in the research or topic
+- Never create a fictional presenter, guide, composite face, or substitute person
+- For a named real person, identity and facial structure must match a verified portrait
+- Do not infer facial characteristics that are not supported by the reference portrait
 - Add 1-2 "setting" entries for the most important recurring locations (e.g. the city, a key building)
 - If a person is historical or well-known, include recognisable period-accurate details
 
@@ -25,7 +30,12 @@ Return a JSON object with EXACTLY this structure:
     {
       "name": "Full Name",
       "role": "e.g. protagonist / antagonist / narrator figure",
-      "visual": "2D flat illustration style — [detailed appearance description, max 60 words]"
+      "visual": "[identity-lock description based only on known appearance, max 60 words]",
+      "reference_query": "<exact full name> portrait",
+      "clothing": "period-accurate wardrobe and fixed colors",
+      "colors": ["#hex", "#hex"],
+      "facial_features": "reference-supported identity anchors only",
+      "body_proportions": "consistent silhouette and proportions"
     }
   ],
   "settings": [

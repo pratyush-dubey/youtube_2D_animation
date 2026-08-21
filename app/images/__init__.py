@@ -46,3 +46,15 @@ def get_image_provider(override: str | None = None) -> ImageProvider:
     # placeholder — always available
     from app.images.placeholder_provider import PlaceholderProvider
     return PlaceholderProvider()
+
+
+from app.images.provider_interface import (
+    ProductionImageProvider,
+    ProviderCapabilities,
+    get_production_image_provider,
+)
+
+__all__ = [
+    "ImageProvider", "get_image_provider", "ProductionImageProvider",
+    "ProviderCapabilities", "get_production_image_provider",
+]

@@ -237,6 +237,7 @@ class VideoScheduler:
         # ── 11. Quality check ───────────────────────────────────────────
         from app.agents.quality_agent import QualityAgent
         qr = QualityAgent().run(context)
+        quality_passed = bool(qr.success and qr.output and qr.output.passed)
         if qr.success and qr.output and not qr.output.passed:
             failed_checks = [c["check"] for c in qr.output.checks if not c["passed"]]
             log.warning("quality_check_failed", failed=failed_checks)
@@ -247,6 +248,7 @@ class VideoScheduler:
             and context.video_path
             and context.video_path.exists()
             and settings.youtube_client_id
+            and quality_passed
         ):
             from app.agents.youtube_agent import YouTubeAgent
             yt = YouTubeAgent().run(context)
