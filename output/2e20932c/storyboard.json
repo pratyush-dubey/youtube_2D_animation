@@ -1,0 +1,149 @@
+{
+  "total_scenes": 10,
+  "scenes": [
+    {
+      "scene_id": 1,
+      "duration_seconds": 25.0,
+      "narration": "For all our satellites, space telescopes, and advanced physics, there are still places right here on Earth that completely break the rules. Spots where stones move on their own, ancient structures predate civilization as we know it, and compasses spin wildly out of control. Let's look at ten places science still can't fully explain.",
+      "visual_description": "An animated globe rotating in space, glowing with satellite lines, zooming into a stylized 2D Earth where mysterious question marks emerge over continents.",
+      "image_prompt": "2D flat vector illustration, editorial style, dark blue and teal color palette with glowing neon yellow accents, a stylized glowing globe with mystery icons and question marks floating around it, clean modern design, high detail",
+      "animation_type": "zoom-in",
+      "camera_motion": "slow-zoom-in",
+      "text_overlay": "10 Mysterious Places Science Can't Explain",
+      "transition": "dissolve",
+      "music_mood": "mysterious",
+      "sfx": [
+        "ambient-space",
+        "chime"
+      ]
+    },
+    {
+      "scene_id": 2,
+      "duration_seconds": 15.0,
+      "narration": "Deep in the arid deserts of Peru lie massive geoglyphs etched directly into the earth.",
+      "visual_description": "A top-down 2D vector animation of the Peruvian desert, revealing giant animal geoglyphs like a hummingbird etched into the sand.",
+      "image_prompt": "2D flat illustration, editorial style, warm earthy tones of terracotta, orange, and sand beige, aerial view of desert landscape with massive geometric animal geoglyphs etched into the ground, clean vector lines, high detail",
+      "animation_type": "pan-right",
+      "camera_motion": "pan-right",
+      "text_overlay": "The Nazca Lines \u2022 Peru",
+      "transition": "cut",
+      "music_mood": "curious",
+      "sfx": [
+        "wind"
+      ]
+    },
+    {
+      "scene_id": 3,
+      "duration_seconds": 20.0,
+      "narration": "First brought to wider attention from commercial aircraft in the 1920s, the Nazca Lines are an incredible collection of over 70 animal and plant geoglyphs. They are so vast that they can only be fully appreciated from the air.",
+      "visual_description": "A vintage biplane flying over the desert landscape, with a dotted line showing the pilot looking down at giant shapes on the ground.",
+      "image_prompt": "2D flat vector illustration, retro aviation aesthetic, muted pastel desert colors with a teal vintage airplane flying overhead, looking down at massive line art figures in the sand, minimalist editorial style, high detail",
+      "animation_type": "parallax",
+      "camera_motion": "slow-zoom-in",
+      "text_overlay": "Over 70 Animal & Plant Geoglyphs",
+      "transition": "cut",
+      "music_mood": "curious",
+      "sfx": []
+    },
+    {
+      "scene_id": 4,
+      "duration_seconds": 20.0,
+      "narration": "Researchers like German mathematician and archaeologist Maria Reiche spent decades studying and protecting these lines. While some researchers suggest the Nazca Lines served an astronomical calendar or water-related ritual purpose, their exact creation and true intent remain deeply debated.",
+      "visual_description": "An animated character of Maria Reiche measuring the desert sand with drafting tools, surrounded by blueprints and star charts.",
+      "image_prompt": "2D flat illustration, editorial style, warm golden hour lighting, a female archaeologist character analyzing star charts and desert measurement tools, blueprint overlays, earth tones, high detail",
+      "animation_type": "zoom-in",
+      "camera_motion": "slow-zoom-in",
+      "text_overlay": "Maria Reiche \u2022 Decades of Research",
+      "transition": "fade",
+      "music_mood": "mysterious",
+      "sfx": []
+    },
+    {
+      "scene_id": 5,
+      "duration_seconds": 30.0,
+      "narration": "Out in the remote Racetrack Playa of Death Valley, a baffling geological mystery plays out across the flat desert floor. Heavy rocks weighing hundreds of pounds move across the surface, leaving long, winding tracks behind them without any human or animal intervention. For years, this phenomenon baffled visitors and researchers alike. Science eventually caught up, revealing that these sailing stones are driven by rare, precise conditions involving thin sheets of ice and wind. Even with this explanation, watching the tracks appear across the dry mud feels entirely unnatural.",
+      "visual_description": "Cracked dry mud flats of Death Valley under a blazing sun, showing large heavy boulders with long parallel tracks stretching away behind them.",
+      "image_prompt": "2D flat vector illustration, editorial style, cracked mud texture, harsh desert sunlight, deep ochre, burnt orange, and pale yellow color palette, large boulders with winding etched tracks trailing behind them, high detail",
+      "animation_type": "pan-left",
+      "camera_motion": "pan-left",
+      "text_overlay": "Death Valley Sailing Stones \u2022 Racetrack Playa",
+      "transition": "dissolve",
+      "music_mood": "mysterious",
+      "sfx": [
+        "wind"
+      ]
+    },
+    {
+      "scene_id": 6,
+      "duration_seconds": 30.0,
+      "narration": "Perhaps no region on Earth holds as much pop-culture mystery as the Bermuda Triangle. This loosely defined region in the western part of the North Atlantic Ocean is famous for a number of aircraft and ships that are said to have disappeared under mysterious circumstances. While popular imagination points to paranormal activity, statistical analysis by insurance agencies like Lloyd's of London suggests losses in this zone are actually not statistically anomalous compared to other heavily traveled ocean areas. Still, the legend persists.",
+      "visual_description": "A triangular ocean map graphic showing glowing coordinates, with stylized cargo ships and airplanes fading out into a misty blue vortex.",
+      "image_prompt": "2D flat vector illustration, moody deep ocean blue and midnight purple color scheme, a glowing triangular map outline in the Atlantic Ocean with faint icons of ships and planes fading away, editorial style, high detail",
+      "animation_type": "zoom-in",
+      "camera_motion": "slow-zoom-in",
+      "text_overlay": "The Bermuda Triangle",
+      "transition": "fade",
+      "music_mood": "tense",
+      "sfx": [
+        "whoosh"
+      ]
+    },
+    {
+      "scene_id": 7,
+      "duration_seconds": 30.0,
+      "narration": "Imagine hearing a persistent, low-frequency droning sound that nobody else around you can hear. That is the reality for residents and visitors in certain locations, most famously in Taos, New Mexico. Only a small percentage of the population can actually perceive this mysterious sound, and despite numerous investigations, its exact source remains completely unidentified. For those who hear it, it is an inescapable part of daily life that defies easy acoustic mapping.",
+      "visual_description": "A quiet desert town in New Mexico at dusk, with visible soundwave ripples floating through the air around suburban houses while people look around confused.",
+      "image_prompt": "2D flat vector illustration, twilight palette with deep indigos, purples, and warm orange window glows, a quiet New Mexico desert town with abstract glowing sound wave ripples moving through the air, editorial style, high detail",
+      "animation_type": "parallax",
+      "camera_motion": "slow-zoom-in",
+      "text_overlay": "The Taos Hum \u2022 New Mexico",
+      "transition": "dissolve",
+      "music_mood": "eerie",
+      "sfx": [
+        "ambient-space"
+      ]
+    },
+    {
+      "scene_id": 8,
+      "duration_seconds": 25.0,
+      "narration": "In Turkey, the archaeological site of Gobekli Tepe completely rewrote what we thought we knew about human history. Featuring massive T-shaped stone pillars dating back roughly 11,500 to 12,000 years, this site predates agriculture entirely.",
+      "visual_description": "Ancient monolithic T-shaped stone pillars carved with animal reliefs standing under a dusty Turkish sky, with schematic excavation tents in the background.",
+      "image_prompt": "2D flat vector illustration, archaeological site in Turkey, warm dusty sandstone and olive green tones, massive carved T-shaped stone pillars with animal engravings, editorial style, high detail",
+      "animation_type": "pan-right",
+      "camera_motion": "pan-right",
+      "text_overlay": "Gobekli Tepe \u2022 Turkey",
+      "transition": "cut",
+      "music_mood": "mysterious",
+      "sfx": []
+    },
+    {
+      "scene_id": 9,
+      "duration_seconds": 25.0,
+      "narration": "German archaeologist Klaus Schmidt led modern excavations here starting in 1995, uncovering a complex that is estimated to be approximately 6,000 years older than Stonehenge. Finding monumental architecture built before humans even settled down to farm completely challenges traditional theories of how civilization developed.",
+      "visual_description": "An animated timeline graphic showing comparative dates between Gobekli Tepe and Stonehenge, emphasizing the massive historical gap.",
+      "image_prompt": "2D flat infographic illustration, clean editorial design, timeline comparison chart with stone circle icons, deep bronze, charcoal, and cream color palette, minimalist vector style, high detail",
+      "animation_type": "zoom-out",
+      "camera_motion": "slow-zoom-out",
+      "text_overlay": "6,000 Years Older Than Stonehenge",
+      "transition": "fade",
+      "music_mood": "curious",
+      "sfx": []
+    },
+    {
+      "scene_id": 10,
+      "duration_seconds": 45.0,
+      "narration": "From shifting desert rocks to ancient sanctuaries built before agriculture, our planet continues to keep its deepest secrets hidden in plain sight. Science moves forward, solving puzzles one by one, but the unknown remains vast. Thanks for watching, and be sure to subscribe for more unexplained mysteries of our world.",
+      "visual_description": "A montage collage of all the mysterious locations covered so far\u2014desert lines, sailing stones, the ocean triangle, and ancient pillars\u2014merging together into a glowing globe.",
+      "image_prompt": "2D flat vector illustration, dramatic cinematic lighting, dark moody background with glowing montage thumbnails of desert landscapes, stone monoliths, and ocean waves, editorial style, high detail",
+      "animation_type": "zoom-in",
+      "camera_motion": "slow-zoom-in",
+      "text_overlay": "Subscribe for More Mysteries",
+      "transition": "fade",
+      "music_mood": "uplifting",
+      "sfx": [
+        "chime",
+        "whoosh"
+      ]
+    }
+  ]
+}

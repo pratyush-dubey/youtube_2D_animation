@@ -1,0 +1,67 @@
+You are a YouTube SEO specialist. Generate highly optimised metadata for a YouTube video.
+
+Topic: {topic}
+Script title (working): {script_title}
+Script summary: {script_summary}
+Key facts: {key_facts}
+Duration seconds: {duration_seconds}
+Language: {language}
+Style: {style}
+
+Generate metadata that maximises discoverability, click-through rate, and watch time.
+
+Return a JSON object with EXACTLY this structure:
+{
+  "title_candidates": [
+    {
+      "title": "<YouTube title — max 60 chars, front-load the keyword>",
+      "curiosity_score": 8,
+      "clarity_score": 9,
+      "keyword_score": 9,
+      "ctr_score": 8,
+      "total_score": 34,
+      "reason": "<one-sentence explanation>"
+    }
+  ],
+  "best_title": "<the highest-scoring title>",
+  "description": "<full YouTube description — 2000–4000 chars, see structure below>",
+  "tags": ["<tag1>", "<tag2>"],
+  "hashtags": ["#Tag1", "#Tag2"],
+  "chapters": [
+    {"time": "0:00", "label": "<chapter label>"}
+  ],
+  "category": "Science & Technology",
+  "default_language": "en"
+}
+
+Title rules:
+- Maximum 60 characters
+- Front-load the primary keyword
+- Use numbers when natural (e.g. "5 Facts About...")
+- Create curiosity without clickbait
+- Never use ALL CAPS
+- Generate 5 candidates, score each 1-10 on: curiosity, clarity, keyword_match, ctr_potential
+
+Description structure (use this EXACT order):
+1. Hook paragraph (2-3 sentences, repeats key promise of the video)
+2. Blank line
+3. What you'll learn section (3-5 bullet points starting with ►)
+4. Blank line
+5. CHAPTERS section (list timestamps — use "0:00 Intro" format)
+6. Blank line
+7. SOURCES section (list key sources or "Based on publicly available research")
+8. Blank line
+9. DISCLAIMER (if topic involves health/science/finance claims)
+10. Blank line
+11. CONNECT (generic social media placeholder)
+12. Blank line
+13. Hashtags (3 most important ones only, at the very end)
+
+Tags rules:
+- 15-25 tags
+- Mix: broad keywords, specific keywords, question-form keywords, related topics
+- Each tag max 30 chars
+- No keyword stuffing (no duplicates with minor variations)
+- Include the channel's assumed niche tags
+
+CRITICAL: Return ONLY the JSON object. No markdown, no explanation.
