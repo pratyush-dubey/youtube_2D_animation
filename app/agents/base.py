@@ -55,7 +55,10 @@ class AgentContext:
     storyboard: Any = None        # list[SceneResult]
     images: dict[int, Path] = field(default_factory=dict)   # scene_id → Path
     narration_files: dict[int, Path] = field(default_factory=dict)
+    audio_plan: dict = field(default_factory=dict)
+    character_voice_map: dict = field(default_factory=dict)
     music_path: Path | None = None
+    master_audio_path: Path | None = None
     video_path: Path | None = None
     thumbnail_path: Path | None = None
     seo: Any = None               # SEOMetadata

@@ -78,10 +78,15 @@ def create_app() -> FastAPI:
         return {"status": "ok", "version": settings.app_version}
 
     # Register routers under /api
-    from app.api.routes import projects_router, jobs_router, editor_router
+    from app.api.routes import character_studio_router, director_router, editor_router, jobs_router, projects_router
     app.include_router(projects_router, prefix="/api")
     app.include_router(jobs_router, prefix="/api")
     app.include_router(editor_router, prefix="/api")
+    app.include_router(character_studio_router)
+    app.include_router(director_router, prefix="/api")
+
+    from app.api.routes.director_ui import router as director_ui_router
+    app.include_router(director_ui_router)
 
     return app
 

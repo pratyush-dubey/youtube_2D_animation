@@ -16,6 +16,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 
 from app.config.settings import settings
+from app.characters.errors import CharacterGenerationError, DIFFUSION_FAILURE
 
 QUALITY_PROFILES = {
     "DRAFT": (640, 360, 15),
@@ -332,18 +333,7 @@ class _World:
             # the painted character inside the environment.
             frame.alpha_composite(actor, (actor_x, actor_y))
             return
-        if self.visual_quality != "DEBUG":
-            # Production never exposes geometric people. Missing art is a
-            # reported asset degradation, not a primitive-character fallback.
-            return
-        _draw_puppet(
-            frame, (cx, self.height * 0.93), self.height * base_scale,
-            phase=phase, walking=walking, expression=expression,
-            rear=shot_type == "rear", identity=str(characters[0]),
-            breathing=1.0 + 0.012 * math.sin(t * 3.0),
-            head_turn=(local if action in {"turn_head", "look_around", "react", "stop"} else 0.0),
-            mouth_open=mouth_open,
-        )
+        raise CharacterGenerationError(DIFFUSION_FAILURE)
 
     def _atmosphere(self, frame: Image.Image, t: float) -> None:
         effect = next(

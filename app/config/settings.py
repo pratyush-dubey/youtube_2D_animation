@@ -36,8 +36,9 @@ class Settings(BaseSettings):
     db_path: Path = Path("./projects/db.sqlite3")
 
     # ── LLM Provider ───────────────────────────────────────────────────────
-    # Default: gemini (generous free tier, cloud-hosted deployment)
-    llm_provider: Literal["ollama", "openai", "gemini"] = "gemini"
+    # Local-first default keeps the Director usable at zero API cost.
+    # Gemini remains an optional configured provider.
+    llm_provider: Literal["ollama", "openai", "gemini"] = "ollama"
 
     # Ollama (optional — local only, not needed for cloud-hosted deployment)
     ollama_base_url: str = "http://localhost:11434"
@@ -94,8 +95,9 @@ class Settings(BaseSettings):
     # coqui     — local MPL2 model (heavier)
     tts_provider: Literal[
         "piper", "coqui", "edge_tts", "gtts", "elevenlabs", "pyttsx3"
-    ] = "edge_tts"
+    ] = "piper"
     piper_model: str = "en_US-lessac-medium"
+    piper_model_path: str = ""
     piper_executable: str = "piper"
     tts_voice: str = "en-IN-PrabhatNeural"
     tts_speed: float = 1.10
@@ -147,6 +149,8 @@ class Settings(BaseSettings):
     # ── Pipeline ───────────────────────────────────────────────────────────
     max_retries: int = 3
     retry_backoff_base: float = 2.0
+    director_max_stage_retries: int = 2
+    minimum_video_quality_score: int = Field(85, ge=0, le=100)
     scene_padding_seconds: float = 0.25  # tight documentary beat between scenes
     words_per_minute: int = 130
 

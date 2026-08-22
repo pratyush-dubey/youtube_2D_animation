@@ -4,7 +4,7 @@ MusicAgent — selects background music from a local CC0 library.
 Priority order:
   1. Local library (assets/music/) — any file in metadata.json with commercial_use=true
   2. Bundled CC0 tracks from ccmixter.org / pixabay (verified working URLs)
-  3. FFmpeg-generated silent fallback (guarantees the video always renders)
+  3. Report unavailable and wait for licensed/imported music
 
 Every downloaded track includes full licensing metadata so the system never
 publishes content with unknown licensing status.
@@ -89,13 +89,10 @@ class MusicAgent(Agent):
 
         # 3. Silent fallback — generates a silent MP3 so the compositor
         #    always has something to work with (no loud silence gaps)
-        silent = self._generate_silent_track(context)
-        if silent:
-            context.music_path = silent
-            logger.info("music_silent_fallback", path=str(silent))
-            return context.music_path
-
-        logger.warning("music_unavailable", project=context.project_id)
+        context.warnings.append(
+            "Licensed music is unavailable; import an approved track before final mixing"
+        )
+        logger.warning("music_unavailable_no_substitution", project=context.project_id)
         return None
 
     # ── helpers ───────────────────────────────────────────────────────────
@@ -164,30 +161,4 @@ class MusicAgent(Agent):
             return dest
         except Exception as exc:
             logger.warning("music_download_failed", url=track["url"], error=str(exc))
-            return None
-
-    def _generate_silent_track(self, context: AgentContext) -> Path | None:
-        """Generate a silent MP3 using FFmpeg as a last resort."""
-        import subprocess
-        silent = _MUSIC_DIR / "silent_fallback.mp3"
-        if silent.exists():
-            return silent
-        try:
-            # Estimate total duration from storyboard
-            total = sum(
-                float(s.get("duration_seconds", 8)) for s in (context.storyboard or [])
-            ) + 30  # add 30 s buffer
-            subprocess.run(
-                [
-                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                    "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo",
-                    "-t", str(int(total)),
-                    "-c:a", "libmp3lame", "-b:a", "64k",
-                    str(silent),
-                ],
-                check=True, capture_output=True,
-            )
-            return silent
-        except Exception as exc:
-            logger.warning("silent_track_generation_failed", error=str(exc))
             return None

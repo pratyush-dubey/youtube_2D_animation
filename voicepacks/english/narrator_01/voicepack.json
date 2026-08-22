@@ -1,0 +1,28 @@
+{
+  "voice_id": "narrator_en_01",
+  "name": "Local Documentary Narrator",
+  "gender": "male",
+  "age_range": "35-55",
+  "accent": "model-dependent; Indian English required for final approval",
+  "language": "en-IN",
+  "tone": "calm, authoritative, cinematic, natural, emotionally controlled",
+  "pitch": -1.0,
+  "speaking_rate": 1.03,
+  "emotion_profile": {
+    "calm": {"speed": 0.98, "pitch": -1.0},
+    "curious": {"speed": 1.02, "pitch": 1.0},
+    "serious": {"speed": 0.96, "pitch": -2.0},
+    "dramatic": {"speed": 0.93, "pitch": -2.0},
+    "tense": {"speed": 0.97, "pitch": 0.0},
+    "reflective": {"speed": 0.92, "pitch": -2.0}
+  },
+  "style": "documentary",
+  "sample_reference": null,
+  "provider": "piper_local",
+  "provider_config": {"engine": "piper", "model_path": ""},
+  "metadata": {
+    "rights": "No real-person identity is claimed or implied",
+    "model_required": true,
+    "status": "Piper executable installed; compatible licensed ONNX model still required"
+  }
+}

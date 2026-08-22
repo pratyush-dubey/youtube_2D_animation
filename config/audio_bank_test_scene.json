@@ -1,0 +1,26 @@
+{
+  "story": "An adult Indian man enters a 1980s Bengaluru bank, walks toward the counter, looks around, and sits down.",
+  "language": "English",
+  "characters": {
+    "arun": {"name": "Arun", "character_voice_id": null}
+  },
+  "scenes": [
+    {
+      "scene_id": 1,
+      "duration_seconds": 30.0,
+      "location": "1980s Bengaluru bank",
+      "era": "1980s",
+      "emotion": "curious",
+      "music_mood": "subtle tension",
+      "visual_description": "An adult Indian man enters a 1980s Bengaluru bank, walks to the counter, looks around, and sits.",
+      "shots": [
+        {"id": "bank_01", "start": 0.0, "duration": 5.0, "action": "approach", "emotion": "calm", "subject": "Bank exterior and entrance", "narration": "In 1985, Bengaluru was a city moving between tradition and change."},
+        {"id": "bank_02", "start": 5.0, "duration": 5.0, "action": "walk", "emotion": "curious", "subject": "Arun walks toward the entrance", "narration": "That morning, Arun arrived at the bank as he always did."},
+        {"id": "bank_03", "start": 10.0, "duration": 5.0, "action": "enter", "emotion": "serious", "subject": "Arun opens the wooden door and enters"},
+        {"id": "bank_04", "start": 15.0, "duration": 5.0, "action": "walk toward counter", "emotion": "curious", "subject": "Arun crosses the banking hall", "narration": "But something in the room felt different."},
+        {"id": "bank_05", "start": 20.0, "duration": 5.0, "action": "look around", "emotion": "tense", "subject": "Arun stops and studies the room", "silence_offset": 1.5, "silence_duration": 0.5, "silence_reason": "controlled observation beat; lower music and ambience"},
+        {"id": "bank_06", "start": 25.0, "duration": 5.0, "action": "sit", "emotion": "reflective", "subject": "Arun sits on a wooden chair", "narration": "He sat down and waited."}
+      ]
+    }
+  ]
+}

@@ -18,6 +18,9 @@ from pathlib import Path
 import structlog
 
 from app.agents.base import Agent, AgentContext
+from app.audio.speech_markup import plain_speech_text
+from app.audio.voice_provider import create_local_voice_provider
+from app.audio.voicepacks import VoicePackRegistry
 from app.config.settings import settings
 
 logger = structlog.get_logger(__name__)
@@ -40,7 +43,14 @@ class VoiceAgent(Agent):
         except Exception:
             manifest = {}
 
-        provider = getattr(settings, "tts_provider", "gtts")
+        provider = getattr(settings, "tts_provider", "piper")
+        voicepack = VoicePackRegistry().narrator(context.language)
+        self._voicepack = voicepack
+        pronunciation_path = context.output_dir / "audio" / "pronunciation_dictionary.json"
+        try:
+            pronunciation = json.loads(pronunciation_path.read_text(encoding="utf-8"))
+        except Exception:
+            pronunciation = {}
 
         total_scenes = len(context.storyboard)
         for scene_index, scene in enumerate(context.storyboard):
@@ -56,10 +66,15 @@ class VoiceAgent(Agent):
                 base_speed=float(getattr(settings, "tts_speed", 1.10)),
             )
 
-            out_path = audio_dir / f"scene_{scene_id:03d}.mp3"
+            planned = next((
+                event for event in context.audio_plan.get("events", [])
+                if event.get("type") == "voice" and str(event.get("scene")) == str(scene_id)
+            ), None)
+            markup = planned.get("text") if planned else f"<emotion={profile['mood']}>{text}</emotion>"
+            out_path = audio_dir / f"scene_{scene_id:03d}{'.wav' if provider == 'piper' else '.mp3'}"
             voice_key = (
-                f"emotion-v3:{provider}:{getattr(settings, 'tts_voice', 'en')}:"
-                f"{json.dumps(profile, sort_keys=True)}:{text}"
+                f"voicepack-v1:{provider}:{voicepack.voice_id}:"
+                f"{json.dumps(profile, sort_keys=True)}:{json.dumps(pronunciation, sort_keys=True)}:{markup}"
             )
             voice_hash = hashlib.sha256(voice_key.encode("utf-8")).hexdigest()[:16]
             if (
@@ -70,7 +85,7 @@ class VoiceAgent(Agent):
                 narration[scene_id] = out_path
                 continue
 
-            path = self._synthesize(text, out_path, provider, profile)
+            path = self._synthesize(markup, out_path, provider, profile, pronunciation)
             path = self._master_voice(path, profile)
             narration[scene_id] = path
             manifest[str(scene_id)] = voice_hash
@@ -90,33 +105,22 @@ class VoiceAgent(Agent):
 
     def _synthesize(
         self, text: str, output_path: Path, provider: str,
-        profile: dict | None = None,
+        profile: dict | None = None, pronunciation: dict | None = None,
     ) -> Path:
+        if provider == "piper":
+            local = create_local_voice_provider(self._voicepack)
+            return local.generate_speech(text, self._voicepack, output_path, pronunciation)
         if provider == "edge_tts":
-            try:
-                return self._edge_tts(text, output_path, profile)
-            except Exception as exc:
-                logger.warning("edge_tts_failed", error=str(exc))
+            return self._edge_tts(text, output_path, profile)
 
         if provider == "elevenlabs":
-            try:
-                return self._elevenlabs(text, output_path)
-            except Exception as exc:
-                logger.warning("elevenlabs_failed", error=str(exc))
+            return self._elevenlabs(plain_speech_text(text, pronunciation), output_path)
 
         if provider in ("google_tts", "gtts"):
-            try:
-                return self._gtts(text, output_path)
-            except Exception as exc:
-                logger.warning("gtts_failed", error=str(exc))
-
-        # pyttsx3 offline fallback
-        try:
-            return self._pyttsx3(text, output_path)
-        except Exception as exc:
-            logger.warning("pyttsx3_failed", error=str(exc))
-            output_path.write_bytes(b"")  # empty placeholder
-            return output_path
+            return self._gtts(plain_speech_text(text, pronunciation), output_path)
+        if provider == "pyttsx3":
+            return self._pyttsx3(plain_speech_text(text, pronunciation), output_path)
+        raise ValueError(f"Unsupported TTS provider: {provider}")
 
     def _edge_tts(
         self, text: str, output_path: Path, profile: dict | None = None
@@ -133,7 +137,7 @@ class VoiceAgent(Agent):
 
         async def _save() -> None:
             communicate = edge_tts.Communicate(
-                text=_spoken_text(text, str(profile.get("mood", "serious"))),
+                text=_spoken_text(plain_speech_text(text), str(profile.get("mood", "serious"))),
                 voice=voice,
                 rate=rate,
                 pitch=f"{int(profile['pitch_hz']):+d}Hz",
@@ -150,7 +154,7 @@ class VoiceAgent(Agent):
         """Tighten pauses and add broadcast presence without clipping emotion."""
         if not path.exists() or path.stat().st_size < 500:
             return path
-        mastered = path.with_name(f"{path.stem}.master.mp3")
+        mastered = path.with_name(f"{path.stem}.master{path.suffix}")
         tempo = float(profile.get("post_tempo", 1.0))
         filters = [
             "silenceremove=start_periods=1:start_duration=0.04:start_threshold=-48dB",
@@ -167,11 +171,12 @@ class VoiceAgent(Agent):
             "loudnorm=I=-16:TP=-1.5:LRA=7",
         ])
         try:
+            codec_args = ["-codec:a", "pcm_s16le"] if path.suffix.lower() == ".wav" else ["-codec:a", "libmp3lame", "-b:a", "128k"]
             subprocess.run(
                 [
                     settings.ffmpeg_path, "-y", "-hide_banner", "-loglevel", "error",
                     "-i", str(path), "-af", ",".join(filters),
-                    "-codec:a", "libmp3lame", "-b:a", "128k", str(mastered),
+                    *codec_args, str(mastered),
                 ],
                 check=True, capture_output=True, text=True,
             )
@@ -213,6 +218,24 @@ class VoiceAgent(Agent):
             output_path.write_bytes(resp.read())
         return output_path
 
+    def _gtts(self, text: str, output_path: Path) -> Path:
+        from gtts import gTTS
+        lang = getattr(settings, "tts_voice", "en")[:2]
+        tts = gTTS(text=text, lang=lang, slow=False)
+        tts.save(str(output_path))
+        return output_path
+
+    def _pyttsx3(self, text: str, output_path: Path) -> Path:
+        import pyttsx3
+        engine = pyttsx3.init()
+        engine.setProperty("rate", 150)
+        wav = output_path.with_suffix(".wav")
+        engine.save_to_file(text, str(wav))
+        engine.runAndWait()
+        if not wav.exists() or wav.stat().st_size < 1000:
+            raise RuntimeError("pyttsx3 returned no usable WAV")
+        return wav
+
 
 _MOOD_DELIVERY = {
     "tense": {"speed": 0.07, "pitch": 1, "volume": 4},
@@ -253,23 +276,3 @@ def _spoken_text(text: str, mood: str) -> str:
     if mood in {"tense", "dramatic"} and spoken.endswith("?"):
         return spoken
     return spoken
-
-    def _gtts(self, text: str, output_path: Path) -> Path:
-        from gtts import gTTS
-        lang = getattr(settings, "tts_voice", "en")[:2]
-        tts = gTTS(text=text, lang=lang, slow=False)
-        tts.save(str(output_path))
-        return output_path
-
-    def _pyttsx3(self, text: str, output_path: Path) -> Path:
-        import pyttsx3, tempfile, shutil
-        engine = pyttsx3.init()
-        engine.setProperty("rate", 150)
-        tmp = Path(tempfile.mktemp(suffix=".wav"))
-        engine.save_to_file(text, str(tmp))
-        engine.runAndWait()
-        if tmp.exists():
-            shutil.move(str(tmp), str(output_path.with_suffix(".wav")))
-            # rename to .mp3 for consistency (it's actually WAV but ffmpeg handles it)
-            output_path.with_suffix(".wav").rename(output_path)
-        return output_path

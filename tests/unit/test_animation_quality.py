@@ -120,18 +120,17 @@ def test_cinematic_overlay_styles_follow_asset_type():
     assert _ass_overlay_style({"asset_type": "evidence-board"}) == "Evidence"
 
 
-def test_character_sprite_is_consistent_and_motion_is_animated(tmp_path):
-    from PIL import Image
-
+def test_procedural_character_sprite_is_retired(tmp_path):
+    import pytest
+    from app.characters.errors import CharacterGenerationError
     from app.video.character_motion import (
         character_overlay_expression,
         create_character_sprite,
     )
 
-    first = create_character_sprite(tmp_path, "Maya Rao", "forest-green field coat")
-    second = create_character_sprite(tmp_path, "Maya Rao", "forest-green field coat")
-    assert first == second
-    assert Image.open(first).mode == "RGBA"
+    assert create_character_sprite.production_safe is False
+    with pytest.raises(CharacterGenerationError, match="Primitive fallback is disabled"):
+        create_character_sprite(tmp_path, "Maya Rao", "forest-green field coat")
 
     x_expr, y_expr = character_overlay_expression("walk-in-right", "right", 5.0)
     assert "t*" in x_expr
@@ -165,9 +164,11 @@ def test_character_agent_never_invents_people_when_research_has_none():
     ]
 
 
-def test_real_character_sprite_requires_verified_reference(tmp_path):
+def test_real_character_reference_does_not_reenable_retired_sprite(tmp_path):
+    import pytest
     from PIL import Image
 
+    from app.characters.errors import CharacterGenerationError
     from app.video.character_motion import character_reference, create_character_sprite
 
     reference = tmp_path / "portrait.jpg"
@@ -180,10 +181,8 @@ def test_real_character_sprite_requires_verified_reference(tmp_path):
         }]
     }
     assert character_reference(sheet, "Named Person") == reference
-    sprite = create_character_sprite(
-        tmp_path, "Named Person", reference_path=reference
-    )
-    assert Image.open(sprite).mode == "RGBA"
+    with pytest.raises(CharacterGenerationError, match="Primitive fallback is disabled"):
+        create_character_sprite(tmp_path, "Named Person", reference_path=reference)
 
     unsafe = {"characters": [{"name": "Named Person"}]}
     assert character_reference(unsafe, "Named Person") is None

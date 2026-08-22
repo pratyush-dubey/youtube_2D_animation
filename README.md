@@ -2,6 +2,18 @@
 
 Automated 2D YouTube video generation system.
 
+## Default product: AI Video Director
+
+Normal use is now one request and one button. Run `start_video_generator.bat`,
+open `http://127.0.0.1:8000/`, describe the finished video, and select **Create
+Video**. Research, scripting, characters, shots, visuals, animation, voice,
+sound, music, subtitles, rendering, QA, thumbnail, SEO, and YouTube preparation
+run as internal background stages. Character Studio and the production editor
+remain available through **Advanced Mode**.
+
+Start with the 60-second option. See [docs/ai_video_director.md](docs/ai_video_director.md)
+for the graph, states, quality gate, retry/repair behavior, and local-first setup.
+
 **Script → AI direction → Shot plan → Shot-specific artwork → Layers/depth → 2D puppet + 2.5D parallax → Audio/subtitles → FFmpeg**
 
 Fully cloud-hosted, no GPU required, mostly free to run.
@@ -271,6 +283,34 @@ CINEMATIC_IMAGE_PROVIDER=unconfigured # automatic1111 | gemini_image | unconfigu
 ZERO_COST_MODE=true
 ```
 
+### Production illustrated-character gate
+
+Character art is a separate, stricter gate. Run it before any animation:
+
+```powershell
+python tools/build_character_quality_test.py
+```
+
+It writes Arun's canonical `character_bible.json`, `reference_analysis.json`, generation
+manifest, master views, poses, `character_beauty_sheet.png`, and `quality_report.json` under
+`D:\AI_VIDEO_GENERATOR\character_library\arun\`. It never creates geometric, SVG, placeholder, or primitive
+character images. Without a genuine reference-capable local image backend, the report is
+`blocked` and contains `generated_images: 0`.
+
+```env
+CHARACTER_IMAGE_PROVIDER=auto # auto | comfyui | imported | gemini_image | unconfigured
+COMFYUI_BASE_URL=http://127.0.0.1:8188
+COMFYUI_GENERATION_TIMEOUT_SECONDS=1800
+IMPORTED_CHARACTER_DIR=assets/imported_characters
+```
+
+Run `start_local_ai.bat` to validate the D: installation, start ComfyUI with DirectML, and wait
+for its health endpoint. `python tools/model_manager.py --verify` inventories the checkpoint,
+size, path, license note, disk space, and SHA-256. `auto` uses local ComfyUI first, approved
+imported artwork second, and stops; Gemini is considered only when explicitly selected.
+Master art and every pose remain subject to manual visual approval before segmentation and
+rigging.
+
 `automatic1111` uses an already-running local Stable Diffusion WebUI. `gemini_image` is a
 separate optional image-generation adapter and is never confused with Gemini Flash-Lite
 reasoning. It remains blocked while `ZERO_COST_MODE=true`. Prompts, references, style,
@@ -421,3 +461,30 @@ MIT — see [LICENSE](LICENSE) for details.
 > It does not scrape, copy, or republish third-party content.
 > Always review generated content before publishing.
 > Never use it to upload misleading, infringing, or policy-violating content.
+# Character Studio webpage
+
+The easiest way to generate a character is to double-click:
+
+```text
+start_character_studio.bat
+```
+
+It checks/starts the local ComfyUI image generator, starts the web application,
+and opens `http://127.0.0.1:8000/character-studio` in your browser. Enter a name
+and detailed character description, choose **Master image** or **Full character
+set**, and click **Generate character**. Every run gets a separate folder under:
+
+```text
+D:\AI_VIDEO_GENERATOR\character_library
+```
+
+The page shows live progress and previews. Use **Open folder** when generation
+finishes. Keep the Character Studio command window open while using the page;
+press `Ctrl+C` in that window to stop the web server.
+
+## Cinematic audio milestone
+
+The project now creates a shot-synchronized `audio_plan.json` before voice
+generation. See [docs/audio_architecture.md](docs/audio_architecture.md) for the
+VoicePack, local Piper, speech-markup, pronunciation, versioning, test-scene and
+dependency-gate workflow.

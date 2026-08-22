@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "policy": "Only locally present assets with explicit license metadata may be marked available.",
+  "sounds": [
+    {"sound_id": "bank_room_tone_1980s", "category": "INTERIOR", "description": "1980s Indian bank room tone", "duration": null, "source": null, "license": null, "tags": ["bank", "room tone"], "era": "1980s", "environment": "interior", "available": false},
+    {"sound_id": "ceiling_fan_period", "category": "BUILDING", "description": "Period ceiling fan", "duration": null, "source": null, "license": null, "tags": ["fan", "mechanical"], "era": "1980s", "environment": "interior", "available": false},
+    {"sound_id": "distant_bank_people_1980s", "category": "CROWD", "description": "Low distant bank conversation", "duration": null, "source": null, "license": null, "tags": ["people", "office"], "era": "1980s", "environment": "interior", "available": false},
+    {"sound_id": "footsteps_indoor_leather", "category": "FOOTSTEPS", "description": "Leather shoes on hard interior floor", "duration": null, "source": null, "license": null, "tags": ["walk", "leather shoes"], "era": "any", "environment": "interior", "available": false},
+    {"sound_id": "cotton_clothing_movement", "category": "CLOTHING", "description": "Subtle cotton clothing movement", "duration": null, "source": null, "license": null, "tags": ["cloth", "body movement"], "era": "any", "environment": "interior", "available": false},
+    {"sound_id": "wooden_bank_door_open_close", "category": "DOORS", "description": "Period wooden bank door open and close", "duration": null, "source": null, "license": null, "tags": ["door", "wood"], "era": "1980s", "environment": "interior", "available": false},
+    {"sound_id": "wooden_chair_creak_impact", "category": "OBJECTS", "description": "Wooden chair creak and seated contact", "duration": null, "source": null, "license": null, "tags": ["chair", "sit"], "era": "any", "environment": "interior", "available": false},
+    {"sound_id": "licensed_music_required", "category": "MUSIC", "description": "Restrained documentary tension cue", "duration": null, "source": null, "license": null, "tags": ["subtle", "tension"], "era": "any", "environment": "score", "available": false}
+  ]
+}

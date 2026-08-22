@@ -233,6 +233,7 @@ def run_pipeline(topic, niche, language, duration, style, provider, upload):
     from app.agents.character_agent import CharacterAgent
     from app.agents.storyboard_agent import StoryboardAgent
     from app.agents.asset_agent import AssetAgent
+    from app.agents.audio_director_agent import AudioDirectorAgent
     from app.agents.voice_agent import VoiceAgent
     from app.agents.music_agent import MusicAgent
     from app.agents.video_edit_agent import VideoEditAgent
@@ -253,6 +254,7 @@ def run_pipeline(topic, niche, language, duration, style, provider, upload):
     _step("Characters", lambda: CharacterAgent(llm=llm).run(context))
     _step("Storyboard", lambda: StoryboardAgent(llm=llm).run(context))
     _step("Images", lambda: AssetAgent().run(context))
+    _step("Audio direction", lambda: AudioDirectorAgent().run(context))
     _step("Voice", lambda: VoiceAgent().run(context))
     _step("Music", lambda: MusicAgent().run(context))
     _step("Video edit", lambda: VideoEditAgent().run(context))

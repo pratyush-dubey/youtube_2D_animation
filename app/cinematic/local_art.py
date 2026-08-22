@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
@@ -23,6 +24,11 @@ UMBER = (105, 64, 42, 255)
 
 def generate_bank_proof_art(output_dir: Path) -> dict:
     """Generate a coherent layer pack and return its manifest."""
+    if os.getenv("ALLOW_PRIMITIVE_DEBUG_ASSETS", "false").lower() not in {"1", "true", "yes"}:
+        raise RuntimeError(
+            "Geometric debug character generation is retired. Configure a production "
+            "CharacterImageProvider and approve its beauty sheet first."
+        )
     output_dir.mkdir(parents=True, exist_ok=True)
     layers = output_dir / "layers"
     parts = output_dir / "character_parts"

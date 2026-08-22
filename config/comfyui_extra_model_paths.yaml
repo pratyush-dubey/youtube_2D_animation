@@ -1,0 +1,7 @@
+local_ai:
+  base_path: D:/AI_VIDEO_GENERATOR/
+  checkpoints: models/checkpoints/
+  loras: models/loras/
+  controlnet: models/controlnet/
+  vae: models/vae/
+  embeddings: models/embeddings/

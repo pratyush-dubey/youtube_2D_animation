@@ -1,10 +1,15 @@
-"""Consistent procedural 2D character sprites and FFmpeg motion expressions."""
+"""DEPRECATED / TEST ONLY motion helpers. Procedural character art is retired."""
 from __future__ import annotations
 
 import hashlib
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
+
+from app.characters.errors import CharacterGenerationError, DIFFUSION_FAILURE
+
+
+production_safe = False
 
 
 CHARACTER_MOTIONS = {
@@ -21,7 +26,18 @@ def create_character_sprite(
     output_dir: Path, character_name: str, visual: str = "",
     reference_path: Path | None = None,
 ) -> Path:
-    """Create one reusable transparent cutout for a recurring character."""
+    """Retired: production must consume an approved diffusion/imported PNG."""
+    raise CharacterGenerationError(DIFFUSION_FAILURE)
+
+
+create_character_sprite.production_safe = False
+
+
+def _deprecated_procedural_character_sprite(
+    output_dir: Path, character_name: str, visual: str = "",
+    reference_path: Path | None = None,
+) -> Path:
+    """DEPRECATED / TEST ONLY. Not callable from the production path."""
     reference_key = ""
     if reference_path and reference_path.exists():
         stat = reference_path.stat()

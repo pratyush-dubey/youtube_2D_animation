@@ -1,0 +1,58 @@
+{
+  "benchmark_version": 1,
+  "completed_at": "2026-08-22T00:12:27Z",
+  "model": "DreamShaper_8_pruned.safetensors",
+  "model_sha256": "879db523c30d3b9017143d56705015e15a2cb5628762c11d086fed9538abd7fd",
+  "steps": 12,
+  "sampler": "dpmpp_2m",
+  "scheduler": "karras",
+  "runs": [
+    {
+      "backend": "DirectML / Intel UHD",
+      "resolution": [512, 512],
+      "success": false,
+      "generation_seconds": 102.463,
+      "system_ram_peak_gb": 15.76,
+      "failure": "Not enough memory resources are available to complete this operation; failed before the first sampling step.",
+      "decision": "rejected"
+    },
+    {
+      "backend": "CPU",
+      "resolution": [512, 512],
+      "success": true,
+      "generation_seconds": 430.521,
+      "system_ram_peak_gb": 13.18,
+      "output": "D:\\AI_VIDEO_GENERATOR\\output\\benchmark\\benchmark_512.png",
+      "decision": "production default; slow but functional"
+    },
+    {
+      "backend": "CPU",
+      "resolution": [768, 768],
+      "success": true,
+      "generation_seconds": 1219.795,
+      "system_ram_peak_gb": 13.52,
+      "output": "D:\\AI_VIDEO_GENERATOR\\output\\benchmark\\benchmark_768.png",
+      "decision": "not a default; 20-minute iteration time is marginal"
+    },
+    {
+      "backend": "CPU",
+      "resolution": [1024, 1024],
+      "success": false,
+      "generation_seconds_before_interrupt": 411.879,
+      "first_step_seconds": 213.2,
+      "projected_total_seconds": 2558.4,
+      "system_ram_peak_gb": 13.39,
+      "failure": "Cleanly interrupted after measurement because the projected 42.6-minute runtime exceeded the 30-minute usability ceiling.",
+      "decision": "rejected"
+    }
+  ],
+  "selected_backend": "CPU",
+  "selected_resolution": [512, 512],
+  "production_note": "Native generation is slow. Use 512px for local drafts/masters and a separate local upscale step only after manual approval. DirectML must not be used on this Intel UHD system for this checkpoint.",
+  "manual_visual_review": {
+    "required": true,
+    "benchmark_512": "Technically valid and painterly, but generic prompt drifted from the intended Arun identity and is not approved character art.",
+    "benchmark_768": "Technically valid, but drifted to a female-presenting subject with long hair and a forehead mark; rejected as Arun art."
+  },
+  "detailed_cpu_report": "output/hardware/image_generation_benchmark_cpu.json"
+}

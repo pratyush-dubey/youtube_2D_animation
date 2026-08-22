@@ -15,6 +15,7 @@ At free quota, this allows ~5 full uploads/day.
 from __future__ import annotations
 
 import time
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -192,12 +193,29 @@ class YouTubeUploader:
                 .first()
             )
             if row:
-                from datetime import datetime, timezone
+                from datetime import datetime
                 row.privacy_status = "public"
-                row.published_at = datetime.now(timezone.utc)
+                row.published_at = datetime.now(UTC)
                 session.add(row)
 
         logger.info("youtube_video_published", video_id=video_id)
+
+    def schedule(self, video_id: str, publish_at: str) -> None:
+        """Schedule an already uploaded private video after human approval."""
+        logger.info("youtube_scheduling_video", video_id=video_id, publish_at=publish_at)
+        youtube = self._build_service()
+        youtube.videos().update(
+            part="status",
+            body={
+                "id": video_id,
+                "status": {
+                    "privacyStatus": "private",
+                    "publishAt": publish_at,
+                    "selfDeclaredMadeForKids": False,
+                },
+            },
+        ).execute()
+        logger.info("youtube_video_scheduled", video_id=video_id, publish_at=publish_at)
 
     # ── private ────────────────────────────────────────────────────────────
 
@@ -304,7 +322,7 @@ class YouTubeUploader:
         return None
 
     def _save_upload(self, result: UploadResult) -> None:
-        from datetime import datetime, timezone
+        from datetime import datetime
         with get_session() as session:
             row = (
                 session.query(YouTubeUpload)
@@ -318,4 +336,4 @@ class YouTubeUploader:
             row.url = result.url
             row.privacy_status = result.privacy_status
             row.thumbnail_uploaded = result.thumbnail_uploaded
-            row.uploaded_at = datetime.now(timezone.utc)
+            row.uploaded_at = datetime.now(UTC)
