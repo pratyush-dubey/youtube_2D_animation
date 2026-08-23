@@ -11,6 +11,8 @@ import re
 from copy import deepcopy
 from typing import Any
 
+from app.video.blocking import character_blocking
+
 SHOT_TYPES = {"wide", "medium", "closeup", "insert", "over_shoulder", "rear"}
 CAMERA_MOVES = {
     "static", "slow_push", "dolly_in", "dolly_out", "pan_left", "pan_right",
@@ -63,12 +65,18 @@ def score_animation_plan(scene: dict) -> dict:
     cameras = {str(s.get("camera", {}).get("move", "static")) for s in shots}
     shot_types = {str(s.get("shot_type", "")) for s in shots}
     layer_types = {str(layer.get("type", "")) for layer in layers}
-    actions = [str(s.get("action", "idle")) for s in shots]
+    character_actions = [
+        str(shot.get("action", "idle")) for shot in shots if shot.get("characters")
+    ]
+    has_character_track = "character" in track_names
 
     scores = {
-        "character_motion": 20 if any(a != "idle" for a in actions) or "character" in track_names else 8,
+        "character_motion": (
+            20 if has_character_track and any(action not in {"idle", "observe"} for action in character_actions)
+            else (8 if has_character_track else 0)
+        ),
         "camera_motion": 20 if any(c != "static" for c in cameras) else 0,
-        "environment_motion": 15 if {"atmosphere", "environment", "lighting"} & track_names else 0,
+        "environment_motion": 20 if {"atmosphere", "environment", "lighting"} & track_names else 0,
         "visual_variation": 15 if len(shot_types) >= 3 else (10 if len(shot_types) == 2 else 3),
         "story_alignment": 15 if all(s.get("action") for s in shots) else 7,
         "audio_sync": 10 if "audio" in track_names else 0,
@@ -148,6 +156,9 @@ def _shot(
     camera.setdefault("start", {"x": 0.0, "y": 0.0, "zoom": _zoom_for(shot_type)})
     end_zoom = float(camera["start"]["zoom"]) + (0.08 if camera["move"] in {"slow_push", "dolly_in"} else 0.0)
     camera.setdefault("end", {"x": 0.0, "y": 0.0, "zoom": end_zoom})
+    character_position = supplied.get("character_position") or character_blocking(
+        action, shot_type, _seed(scene)
+    )
     return {
         "id": f"{scene.get('scene_id', 1)}{chr(65 + index)}",
         "start": round(start, 3),
@@ -159,6 +170,7 @@ def _shot(
         "expression": expression if expression in EXPRESSIONS else "neutral",
         "subject": supplied.get("subject") or scene.get("visual_description", "story subject"),
         "transition": transition,
+        "character_position": character_position,
     }
 
 

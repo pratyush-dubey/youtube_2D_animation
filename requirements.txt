@@ -25,6 +25,10 @@ google-auth<2.42
 
 # Image processing (always needed — thumbnails, placeholder frames)
 Pillow>=10.3.0
+numpy>=2.0
+opencv-python>=4.10.0
+# Subject/background segmentation for character cutouts (production_assets.py)
+rembg>=2.0.81
 
 # Audio processing
 pydub>=0.25.1

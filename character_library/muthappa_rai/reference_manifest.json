@@ -1,0 +1,26 @@
+{
+  "character_id": "muthappa_rai",
+  "visual_type": "ai_reconstruction",
+  "identity_status": "pending_objective_approval",
+  "references": [
+    {
+      "path": "reference/india_today_2020.jpg",
+      "source_url": "https://www.indiatoday.in/india/story/bengaluru-reformed-don-muthappa-rai-dies-brain-cancer-1678224-2020-05-15",
+      "source_image_url": "https://akm-img-a-in.tosshub.com/indiatoday/images/story/202005/13096193_803369493133944_90574.jpeg?size=690:388",
+      "usage": "primary face, hair, sunglasses, moustache and goatee reference",
+      "description": "Close portrait published by India Today in 2020."
+    },
+    {
+      "path": "reference/wired_2008.jpg",
+      "source_url": "https://www.wired.com/2008/10/mf-mobgalore/",
+      "source_image_url": "https://media.wired.com/photos/5a705b4d5bb8496b93c3478a/3:2/w_2560,c_limit/mf_mobgalore_f.jpg",
+      "usage": "period context and secondary appearance reference",
+      "description": "Environmental photograph accompanying WIRED's 2008 profile."
+    }
+  ],
+  "generation_policy": {
+    "do_not_label_as_archival": true,
+    "do_not_claim_exact_identity_until_approved": true,
+    "proof_must_fail_if_full_body_identity_or_anatomy_is_not_acceptable": true
+  }
+}

@@ -31,8 +31,8 @@ Return a JSON object with EXACTLY this structure:
   ],
   "conclusion": "<closing narration — summarise key takeaway, not a list recap>",
   "call_to_action": "<natural subscribe/like CTA — keep it short and genuine>",
-  "estimated_duration_seconds": 480,
-  "word_count": 1040,
+  "estimated_duration_seconds": {target_duration_seconds},
+  "word_count": {target_words},
   "tone": "<documentary|educational|entertaining|dramatic>"
 }
 

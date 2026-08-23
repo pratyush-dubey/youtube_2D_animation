@@ -11,6 +11,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+import cv2
+import numpy as np
 from PIL import Image, ImageChops, ImageFilter, ImageStat
 
 
@@ -115,7 +117,7 @@ def prepare_production_assets(
     shutil.copy2(character_source, reference)
     fear_cutout = character_dir / "expressions" / "fear.png"
     fear_cutout.parent.mkdir(parents=True, exist_ok=True)
-    remove_connected_background(fear_source, fear_cutout)
+    remove_subject_background(fear_source, fear_cutout)
 
     reports = [
         evaluate_asset(master, "environment"),
@@ -156,14 +158,13 @@ def evaluate_asset(path: Path, asset_type: str) -> AssetQualityReport:
     image = Image.open(path)
     rgb = image.convert("RGB")
     width, height = image.size
-    grayscale = rgb.convert("L")
-    entropy = round(grayscale.entropy(), 3)
-    edges = grayscale.filter(ImageFilter.FIND_EDGES)
-    edge_mean = round(ImageStat.Stat(edges).mean[0], 3)
-    colors = rgb.resize((256, 256), Image.Resampling.BILINEAR).quantize(colors=256).getcolors()
-    unique_colors = len(colors or [])
     alpha_coverage = 1.0
     has_transparency = False
+    # Detail is measured on the subject itself, not diluted by a cut-out
+    # transparent background: a cleanly segmented character crop should not
+    # score as "low detail" just because most of the canvas is now empty.
+    stats_source = rgb
+    subject_bbox: tuple[int, int, int, int] | None = None
     if "A" in image.mode:
         alpha = image.getchannel("A")
         histogram = alpha.histogram()
@@ -171,12 +172,42 @@ def evaluate_asset(path: Path, asset_type: str) -> AssetQualityReport:
         transparent = sum(histogram[:16])
         alpha_coverage = round(1.0 - transparent / max(total, 1), 4)
         has_transparency = transparent > total * 0.03
+        if has_transparency:
+            subject_bbox = alpha.point(lambda v: 255 if v > 16 else 0).getbbox()
+            if subject_bbox:
+                stats_source = rgb.crop(subject_bbox)
+    grayscale = stats_source.convert("L")
+    entropy = round(grayscale.entropy(), 3)
+    edges = grayscale.filter(ImageFilter.FIND_EDGES)
+    edge_mean = round(ImageStat.Stat(edges).mean[0], 3)
+    colors = stats_source.resize((256, 256), Image.Resampling.BILINEAR).quantize(colors=256).getcolors()
+    unique_colors = len(colors or [])
 
+    diagram_types = {
+        "animated-map", "newspaper-document", "evidence-board", "date-card",
+        "location-card", "diagram",
+    }
+    # Scene backgrounds for the master-timeline reconstruction pipeline are
+    # deliberately rendered at 768x432 (app/agents/asset_agent.py's _comfyui
+    # and _pollinations both hardcode this) - it's the compositing resolution
+    # animated_renderer.py works at before ffmpeg upscales to final output;
+    # it is not a defect to be measured against near-final-resolution assets.
+    reconstruction_types = {"cinematic-reenactment"}
+    is_diagram = asset_type in diagram_types
+    is_reconstruction = asset_type in reconstruction_types
+    if is_diagram:
+        min_width, min_height, entropy_floor, edge_floor, color_floor = 1280, 720, 3.5, 2.0, 48
+    elif is_reconstruction:
+        min_width, min_height, entropy_floor, edge_floor, color_floor = 760, 420, 4.5, 3.5, 96
+    else:
+        min_width, min_height, entropy_floor, edge_floor, color_floor = 1000, 900, 5.0, 5.0, 128
     checks = {
-        "resolution": width >= 1000 and height >= 900,
-        "detail_entropy": entropy >= 5.0,
-        "edge_detail": edge_mean >= 5.0,
-        "color_complexity": unique_colors >= 128,
+        "resolution": width >= min_width and height >= min_height,
+        # Maps/cards intentionally contain quiet negative space and clean lines;
+        # applying painterly-environment thresholds rejects valid editorial art.
+        "detail_entropy": entropy >= entropy_floor,
+        "edge_detail": edge_mean >= edge_floor,
+        "color_complexity": unique_colors >= color_floor,
         "transparency": True,
     }
     if asset_type in {"character", "expression"}:
@@ -185,6 +216,24 @@ def evaluate_asset(path: Path, asset_type: str) -> AssetQualityReport:
         "resolution": 20, "detail_entropy": 25, "edge_detail": 20,
         "color_complexity": 20, "transparency": 15,
     }
+    if asset_type == "character" and subject_bbox:
+        # A generation provider ignoring "plain background" instructions (a
+        # painted room, a poster propped against a wall, ...) can still
+        # segment out a plausible-looking subject region that isn't a clean
+        # standing figure, so alpha_coverage alone can still land in the
+        # accepted range while the alpha bbox is nowhere near a standing
+        # human silhouette. app.images.character_illustration's
+        # rig extraction assumes standing-figure proportions (head in the top
+        # ~20%, legs in the bottom ~40%) and produces visibly torn, misplaced
+        # body parts when fed a bbox like a near-square prop-and-wall scene.
+        # Weighted so failing it alone caps the score below the passing
+        # threshold regardless of every other check - this is a hard
+        # prerequisite for rig extraction, not a soft quality signal.
+        bbox_w = subject_bbox[2] - subject_bbox[0]
+        bbox_h = subject_bbox[3] - subject_bbox[1]
+        checks["silhouette_shape"] = 0.15 <= (bbox_w / max(bbox_h, 1)) <= 0.65
+        weights = {name: round(value * 0.75) for name, value in weights.items()}
+        weights["silhouette_shape"] = 25
     score = sum(weights[name] for name, passed in checks.items() if passed)
     problems = [name for name, passed in checks.items() if not passed]
     return AssetQualityReport(
@@ -199,48 +248,36 @@ def evaluate_asset(path: Path, asset_type: str) -> AssetQualityReport:
     )
 
 
-def remove_connected_background(source_path: Path, output_path: Path) -> Path:
-    """Remove a bright checker/neutral backdrop without erasing enclosed highlights."""
+_rembg_session_cache: dict[str, Any] = {}
+
+
+def _rembg_session():
+    """Lazily load and cache the human-segmentation model (one ~176MB
+    download on first use, then instant from the local rembg cache)."""
+    session = _rembg_session_cache.get("session")
+    if session is None:
+        from rembg import new_session
+
+        session = new_session("u2net_human_seg")
+        _rembg_session_cache["session"] = session
+    return session
+
+
+def remove_subject_background(source_path: Path, output_path: Path) -> Path:
+    """Isolate the illustrated subject with a trained human-segmentation model.
+
+    A brightness/connected-component heuristic previously did this job but
+    could not distinguish a light-toned garment from a light studio backdrop
+    - it silently erased large parts of any white/cream shirt, saree, kurta,
+    or achkan (common in real historical-figure references), leaving a torn
+    silhouette or a giant erased halo around the whole figure. A trained
+    segmentation model has no such blind spot: it identifies the person as a
+    subject regardless of how their clothing's color relates to the backdrop.
+    """
+    from rembg import remove
+
     source = Image.open(source_path).convert("RGB")
-    width, height = source.size
-    pixels = source.load()
-    visited = bytearray(width * height)
-    stack: list[tuple[int, int]] = []
-
-    def candidate(x: int, y: int) -> bool:
-        r, g, b = pixels[x, y]
-        return max(r, g, b) - min(r, g, b) <= 16 and min(r, g, b) >= 218
-
-    for x in range(width):
-        if candidate(x, 0):
-            stack.append((x, 0))
-        if candidate(x, height - 1):
-            stack.append((x, height - 1))
-    for y in range(height):
-        if candidate(0, y):
-            stack.append((0, y))
-        if candidate(width - 1, y):
-            stack.append((width - 1, y))
-    mask = Image.new("L", source.size, 255)
-    mask_pixels = mask.load()
-    while stack:
-        x, y = stack.pop()
-        index = y * width + x
-        if visited[index] or not candidate(x, y):
-            continue
-        visited[index] = 1
-        mask_pixels[x, y] = 0
-        if x:
-            stack.append((x - 1, y))
-        if x + 1 < width:
-            stack.append((x + 1, y))
-        if y:
-            stack.append((x, y - 1))
-        if y + 1 < height:
-            stack.append((x, y + 1))
-    mask = mask.filter(ImageFilter.GaussianBlur(1.1))
-    result = source.convert("RGBA")
-    result.putalpha(mask)
+    result = remove(source, session=_rembg_session())
     output_path.parent.mkdir(parents=True, exist_ok=True)
     result.save(output_path, "PNG", optimize=True)
     return output_path
@@ -285,7 +322,14 @@ def extract_environment_layers(master_path: Path, output_dir: Path) -> dict[str,
 
 
 def extract_character_rig(reference_path: Path, output_dir: Path) -> Path:
-    """Partition transparent illustrated pixels into transformable body layers."""
+    """Partition approved artwork into a hierarchical, transformable cutout rig.
+
+    This is deliberately an artwork segmentation operation: every visible pixel
+    comes from ``reference_path``.  The returned joint graph is consumed by the
+    articulated renderer; a monolithic character-position track is not a rig.
+    The automatic masks are deterministic and may be replaced by same-named
+    hand-corrected PNGs before a production render.
+    """
     source = Image.open(reference_path).convert("RGBA")
     alpha = source.getchannel("A")
     bbox = alpha.getbbox()
@@ -295,46 +339,122 @@ def extract_character_rig(reference_path: Path, output_dir: Path) -> Path:
     width, height = right - left, bottom - top
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    def part_for(nx: float, ny: float) -> str:
-        if ny < 0.235:
-            return "head"
-        if ny > 0.59:
-            return "left_leg" if nx < 0.52 else "right_leg"
-        if nx < 0.34:
-            return "left_arm"
-        if nx > 0.70:
-            return "right_arm"
-        return "torso"
-
-    masks = {name: Image.new("L", source.size, 0) for name in (
-        "head", "torso", "left_arm", "right_arm", "left_leg", "right_leg",
-    )}
-    mask_pixels = {name: mask.load() for name, mask in masks.items()}
-    alpha_pixels = alpha.load()
-    for y in range(top, bottom):
-        ny = (y - top) / max(height, 1)
-        for x in range(left, right):
-            value = alpha_pixels[x, y]
-            if not value:
-                continue
-            nx = (x - left) / max(width, 1)
-            mask_pixels[part_for(nx, ny)][x, y] = value
+    part_names = (
+        "head", "neck", "torso", "clothing",
+        "hair", "eyes", "eyebrows", "mouth",
+        "left_upper_arm", "left_lower_arm", "left_hand",
+        "right_upper_arm", "right_lower_arm", "right_hand",
+        "left_upper_leg", "left_lower_leg", "left_foot",
+        "right_upper_leg", "right_lower_leg", "right_foot",
+    )
+    # Classify only the occupied crop with vectorized normalized coordinates.
+    # The previous per-pixel Python loop made a normal 1K character take tens
+    # of seconds before rendering had even begun.
+    alpha_array = np.asarray(alpha, dtype=np.uint8)
+    labels = np.empty((height, width), dtype=np.uint8)
+    yy, xx = np.mgrid[0:height, 0:width]
+    nx = xx / max(width, 1)
+    ny = yy / max(height, 1)
+    labels[:] = part_names.index("torso")
+    labels[ny < 0.205] = part_names.index("head")
+    labels[(ny >= 0.205) & (ny < 0.255) & (nx >= .43) & (nx <= .57)] = part_names.index("neck")
+    leg = ny > 0.59
+    left_side = nx < 0.52
+    labels[leg & left_side & (ny <= 0.76)] = part_names.index("left_upper_leg")
+    labels[leg & left_side & (ny > 0.76) & (ny <= 0.90)] = part_names.index("left_lower_leg")
+    labels[leg & left_side & (ny > 0.90)] = part_names.index("left_foot")
+    labels[leg & ~left_side & (ny <= 0.76)] = part_names.index("right_upper_leg")
+    labels[leg & ~left_side & (ny > 0.76) & (ny <= 0.90)] = part_names.index("right_lower_leg")
+    labels[leg & ~left_side & (ny > 0.90)] = part_names.index("right_foot")
+    upper = (ny >= 0.205) & (ny <= 0.59)
+    labels[upper & (nx < 0.34) & (ny <= 0.40)] = part_names.index("left_upper_arm")
+    labels[upper & (nx < 0.34) & (ny > 0.40) & (ny <= 0.54)] = part_names.index("left_lower_arm")
+    labels[upper & (nx < 0.34) & (ny > 0.54)] = part_names.index("left_hand")
+    labels[upper & (nx > 0.70) & (ny <= 0.40)] = part_names.index("right_upper_arm")
+    labels[upper & (nx > 0.70) & (ny > 0.40) & (ny <= 0.54)] = part_names.index("right_lower_arm")
+    labels[upper & (nx > 0.70) & (ny > 0.54)] = part_names.index("right_hand")
+    # Facial and clothing controls are retained as independently addressable
+    # painted layers.  They are small source-derived masks, never replacement
+    # geometry.  Clothing remains on the torso in the beauty render; its layer
+    # is provided for manual correction/secondary motion and hidden by default.
+    face_regions = {
+        "hair": (0.39, 0.0, 0.61, 0.065),
+        "eyes": (0.405, 0.075, 0.595, 0.122),
+        "eyebrows": (0.415, 0.065, 0.585, 0.095),
+        "mouth": (0.455, 0.145, 0.545, 0.178),
+    }
+    for name, (x0, y0, x1, y1) in face_regions.items():
+        region = (nx >= x0) & (nx <= x1) & (ny >= y0) & (ny <= y1)
+        labels[region] = part_names.index(name)
+    masks = {}
+    crop_alpha = alpha_array[top:bottom, left:right]
+    for index, name in enumerate(part_names):
+        crop_mask = np.where(labels == index, crop_alpha, 0).astype(np.uint8)
+        full_mask = np.zeros_like(alpha_array)
+        full_mask[top:bottom, left:right] = crop_mask
+        masks[name] = Image.fromarray(full_mask)
 
     pivot_norm = {
-        "head": (0.50, 0.92), "torso": (0.50, 0.30),
-        "left_arm": (0.86, 0.12), "right_arm": (0.14, 0.12),
-        "left_leg": (0.70, 0.08), "right_leg": (0.30, 0.08),
+        "head": (0.50, 0.90), "neck": (0.50, 0.82),
+        "torso": (0.50, 0.56), "clothing": (0.50, 0.50),
+        "hair": (0.50, 0.90), "eyes": (0.50, 0.50),
+        "eyebrows": (0.50, 0.50), "mouth": (0.50, 0.50),
+        "left_upper_arm": (0.86, 0.10), "left_lower_arm": (0.60, 0.08),
+        "left_hand": (0.55, 0.08), "right_upper_arm": (0.14, 0.10),
+        "right_lower_arm": (0.40, 0.08), "right_hand": (0.45, 0.08),
+        "left_upper_leg": (0.70, 0.06), "left_lower_leg": (0.58, 0.06),
+        "left_foot": (0.55, 0.08), "right_upper_leg": (0.30, 0.06),
+        "right_lower_leg": (0.42, 0.06), "right_foot": (0.45, 0.08),
+    }
+    # Joint coordinates are normalized within the occupied source bbox.  The
+    # left/right labels describe the viewer-facing artwork, matching filenames.
+    joint_norm = {
+        "hips": (.50, .565), "spine": (.50, .40), "chest": (.50, .275),
+        "neck": (.50, .215), "head": (.50, .185), "mouth": (.50, .162),
+        "shoulder_l": (.355, .275), "elbow_l": (.300, .425), "wrist_l": (.265, .555),
+        "shoulder_r": (.645, .275), "elbow_r": (.700, .425), "wrist_r": (.735, .555),
+        "hip_l": (.445, .565), "knee_l": (.425, .755), "ankle_l": (.405, .905), "toe_l": (.345, .955),
+        "hip_r": (.555, .565), "knee_r": (.575, .755), "ankle_r": (.595, .905), "toe_r": (.655, .955),
+    }
+    joints = {
+        name: [left + px * width, top + py * height]
+        for name, (px, py) in joint_norm.items()
+    }
+    parents = {
+        "torso": None, "clothing": "torso", "neck": "torso", "head": "neck",
+        "hair": "head", "eyes": "head", "eyebrows": "head", "mouth": "head",
+        "left_upper_arm": "torso", "left_lower_arm": "left_upper_arm", "left_hand": "left_lower_arm",
+        "right_upper_arm": "torso", "right_lower_arm": "right_upper_arm", "right_hand": "right_lower_arm",
+        "left_upper_leg": "torso", "left_lower_leg": "left_upper_leg", "left_foot": "left_lower_leg",
+        "right_upper_leg": "torso", "right_lower_leg": "right_upper_leg", "right_foot": "right_lower_leg",
+    }
+    joint_for_part = {
+        "torso": "hips", "clothing": "hips", "neck": "chest", "head": "neck",
+        "hair": "head", "eyes": "head", "eyebrows": "head", "mouth": "head",
+        "left_upper_arm": "shoulder_l", "left_lower_arm": "elbow_l", "left_hand": "wrist_l",
+        "right_upper_arm": "shoulder_r", "right_lower_arm": "elbow_r", "right_hand": "wrist_r",
+        "left_upper_leg": "hip_l", "left_lower_leg": "knee_l", "left_foot": "ankle_l",
+        "right_upper_leg": "hip_r", "right_lower_leg": "knee_r", "right_foot": "ankle_r",
     }
     manifest: dict[str, Any] = {
-        "rig_version": 1,
+        "rig_version": 3,
         "canvas_size": list(source.size),
         "source_bbox": list(bbox),
+        "source_path": str(reference_path.resolve()),
+        "representation": "segmented_artwork_skeleton",
+        "manual_correction_supported": True,
+        "joints": joints,
+        "parents": parents,
         "parts": {},
     }
     for name, mask in masks.items():
         # Slight overlap hides cut seams during restrained joint rotation while
         # retaining the source illustration's outer alpha silhouette.
-        mask = ImageChops.darker(mask.filter(ImageFilter.MaxFilter(15)), alpha)
+        # Generous source-pixel overlap forms painted joint gussets. Without it,
+        # rotating two perfectly abutting masks exposes transparent wedges at
+        # shoulders, knees and elbows even though the skeleton is connected.
+        dilated = cv2.dilate(np.asarray(mask), np.ones((31, 31), np.uint8), iterations=1)
+        mask = ImageChops.darker(Image.fromarray(dilated), alpha)
         part_bbox = mask.getbbox()
         if not part_bbox:
             continue
@@ -348,6 +468,9 @@ def extract_character_rig(reference_path: Path, output_dir: Path) -> Path:
             "position": [part_bbox[0], part_bbox[1]],
             "size": [part_bbox[2] - part_bbox[0], part_bbox[3] - part_bbox[1]],
             "pivot": list(pivot_norm[name]),
+            "joint": joint_for_part[name],
+            "parent": parents[name],
+            "visible": name != "clothing",
         }
     manifest_path = output_dir / "rig.json"
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")

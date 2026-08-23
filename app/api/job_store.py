@@ -11,7 +11,9 @@ This means jobs survive application restarts.
 from __future__ import annotations
 
 import threading
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -79,22 +81,65 @@ class JobStore:
         try:
             from app.database.models import PipelineJob
             from app.database.session import get_session
+            from app.config.settings import settings
             with get_session() as s:
                 rows = s.query(PipelineJob).order_by(PipelineJob.started_at).all()
                 with self._lock:
                     for row in rows:
+                        status = row.status
+                        error = row.error_message
+                        finished_at = row.finished_at
+                        if status in {"queued", "running"}:
+                            error = "Job was interrupted by an API process restart; retry the failed stage."
+                            status = "requires_attention"
+                            finished_at = datetime.now(timezone.utc)
+                            row.status = status
+                            row.error_message = error
+                            row.finished_at = finished_at
+                            self._reconcile_interrupted_director_state(
+                                Path(settings.output_dir) / row.project_id,
+                                row.job_id,
+                                error,
+                            )
                         self._cache[row.job_id] = {
                             "job_id": row.job_id,
                             "project_id": row.project_id,
-                            "status": row.status,
+                            "status": status,
                             "stage": row.stage,
                             "started_at": str(row.started_at) if row.started_at else None,
-                            "finished_at": str(row.finished_at) if row.finished_at else None,
-                            "error": row.error_message,
+                            "finished_at": str(finished_at) if finished_at else None,
+                            "error": error,
                         }
             logger.info("job_store_loaded_from_db", count=len(self._cache))
         except Exception as exc:
             logger.warning("job_store_load_failed", error=str(exc))
+
+    @staticmethod
+    def _reconcile_interrupted_director_state(
+        output_dir: Path, job_id: str, error: str,
+    ) -> None:
+        """A thread-pool job cannot survive an API process restart."""
+        path = output_dir / "director_state.json"
+        try:
+            state = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if state.get("job_id") != job_id:
+            return
+        running_stage = None
+        for name, stage in state.get("stages", {}).items():
+            if stage.get("status") == "running":
+                running_stage = name
+                stage.update(status="failed", message=error, error=error)
+                break
+        state.update(
+            state="VISUALS_FAILED" if running_stage == "visuals" else "REQUIRES_ATTENTION",
+            requires_attention=True,
+            updated_at=datetime.now(timezone.utc).isoformat(),
+        )
+        temporary = path.with_suffix(".restart-recovery.tmp")
+        temporary.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        temporary.replace(path)
 
     # ── Internal ──────────────────────────────────────────────────────────────
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from app.api.app import create_app
+from app.director.director import Director, VideoRequest
 
 
 def test_default_page_is_single_director_workflow():
@@ -70,3 +71,36 @@ def test_bootstrap_failure_is_terminal_in_project_ui(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["state"] == "REQUIRES_ATTENTION"
+
+
+def test_retry_failed_stage_preserves_completed_stages(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.director.director.settings.output_dir", tmp_path)
+    monkeypatch.setattr("app.api.routes.director.settings.output_dir", tmp_path)
+    monkeypatch.setattr(
+        "app.api.job_runner.submit_director_job",
+        lambda project_id, video_request: "original-job",
+    )
+    monkeypatch.setattr(
+        "app.api.job_runner.submit_director_stage_retry",
+        lambda project_id, video_request, stage: "retry-job",
+    )
+    with TestClient(create_app()) as client:
+        created = client.post("/api/director/videos", json={
+            "request": "Create a short documentary about Bangalore in 1980.",
+            "duration_seconds": 60,
+        }).json()
+        director = Director("original-job", created["project_id"], VideoRequest("request"))
+        for name in ("research", "story", "script", "characters"):
+            director.state["stages"][name]["status"] = "complete"
+        director.state["stages"]["visuals"]["status"] = "failed"
+        director.state_path.write_text(__import__("json").dumps(director.state), encoding="utf-8")
+
+        response = client.post(
+            f"/api/director/projects/{created['project_id']}/stages/visuals/retry"
+        )
+
+    assert response.status_code == 202
+    assert response.json()["retrying_stage"] == "visuals"
+    assert set(response.json()["preserved_stages"]) >= {
+        "research", "story", "script", "characters",
+    }

@@ -38,9 +38,8 @@ class GeminiImagenProvider:
         """
         Generate a 1920×1080 image from prompt and save to output_path.
 
-        Falls back gracefully: if Imagen quota is exceeded or the model
-        refuses the prompt, raises an exception so AssetAgent can try the
-        next provider.
+        If quota is exceeded or the model refuses the prompt, raises the exact
+        exception. Production orchestration never silently changes providers.
         """
         try:
             from google import genai

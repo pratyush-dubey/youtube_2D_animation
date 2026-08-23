@@ -27,8 +27,15 @@ def attach_character_references(
         if not canonical_name:
             continue
         entry["name"] = canonical_name
-        existing = Path(str(entry.get("reference_image", "")))
-        if existing.exists() and existing.stat().st_size > 1000:
+        # `Path("").exists()` resolves to the current working directory, which
+        # always exists and reports a nonzero directory size on Windows - an
+        # unset reference_image ("" default) was silently satisfying this
+        # check, marking every fresh character "verified-local-reference" and
+        # skipping the real Wikipedia lookup below entirely. is_file() (not
+        # exists()) plus a non-empty-string guard closes that off.
+        existing_raw = str(entry.get("reference_image", "")).strip()
+        existing = Path(existing_raw) if existing_raw else None
+        if existing is not None and existing.is_file() and existing.stat().st_size > 1000:
             entry["identity_reference_status"] = "verified-local-reference"
             characters.append(entry)
             continue
@@ -121,6 +128,7 @@ def resolve_wikimedia_portrait(name: str, output_dir: Path) -> dict | None:
     metadata = info.get("extmetadata", {})
     return {
         "reference_image": str(target.resolve()),
+        "reference_public_url": image_url,
         "reference_source_url": str(page.get("fullurl", "")),
         "reference_file_url": str(info.get("descriptionurl") or info.get("url") or ""),
         "reference_license": _metadata_value(metadata, "LicenseShortName") or "unknown",

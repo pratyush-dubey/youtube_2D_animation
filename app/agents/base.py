@@ -20,13 +20,38 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import structlog
 
 from app.config.settings import settings
 
 logger = structlog.get_logger(__name__)
+
+
+def is_retryable_exception(exc: Exception) -> bool:
+    """Classify transient failures across an exception cause chain."""
+    messages = []
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        messages.append(f"{type(current).__name__}: {current}".lower())
+        current = current.__cause__ or current.__context__
+    text = " ".join(messages)
+    terminal = (
+        "resource_exhausted", "quota exceeded", "permission_denied",
+        "unauthenticated", "invalid api key", "model not found",
+        "invalid workflow", "checkpoint not found", "content safety",
+    )
+    if any(token in text for token in terminal):
+        return False
+    transient = (
+        "timeout", "timed out", "connection refused", "unreachable",
+        "temporarily unavailable", "connectionerror", "502", "503", "504",
+        "rate limit", "too many requests",
+    )
+    return any(token in text for token in transient)
 
 
 @dataclass
@@ -53,6 +78,8 @@ class AgentContext:
     script: Any = None            # ScriptResult
     character_sheet: dict = field(default_factory=dict)  # key figures → visual description
     storyboard: Any = None        # list[SceneResult]
+    master_timeline: dict = field(default_factory=dict)
+    narration_alignment: list[dict] = field(default_factory=list)
     images: dict[int, Path] = field(default_factory=dict)   # scene_id → Path
     narration_files: dict[int, Path] = field(default_factory=dict)
     audio_plan: dict = field(default_factory=dict)
@@ -69,6 +96,10 @@ class AgentContext:
     total_cost_usd: float = 0.0
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # Long-running stages use this to publish truthful unit progress without
+    # coupling agents to the web/API layer.
+    progress_callback: Callable[[dict[str, Any]], None] | None = None
+    visual_trace: Any = None
 
 
 @dataclass
@@ -80,6 +111,9 @@ class AgentResult:
     error: str | None = None
     duration_seconds: float = 0.0
     cost_usd: float = 0.0
+    # Kept in memory so orchestration can preserve the original exception
+    # type/details. It is never serialized into public API responses.
+    exception: Exception | None = None
 
 
 class Agent(ABC):
@@ -119,6 +153,8 @@ class Agent(ABC):
                     error=str(exc)[:200],
                 )
                 if attempt <= self.max_retries:
+                    if not is_retryable_exception(exc):
+                        break
                     time.sleep(self.retry_delay * attempt)
 
         duration = round(time.monotonic() - t0, 2)
@@ -131,6 +167,7 @@ class Agent(ABC):
             success=False,
             error=err,
             duration_seconds=duration,
+            exception=last_exc,
         )
 
     @abstractmethod

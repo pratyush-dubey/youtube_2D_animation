@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     # Ollama (optional — local only, not needed for cloud-hosted deployment)
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1:8b"
-    ollama_timeout: int = 120
+    ollama_timeout: int = 300
 
     # OpenAI
     openai_api_key: str = ""
@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 8192   # generous default; individual calls can override lower
     llm_max_retries: int = 5          # more attempts to handle 503 spikes
     llm_retry_delay: float = 5.0      # base delay; exponential backoff applied on top
+    llm_request_timeout_seconds: int = 60
 
     # ── Image Provider ─────────────────────────────────────────────────────
     # placeholder  — instant, no API, good for testing
@@ -68,8 +69,14 @@ class Settings(BaseSettings):
     # stability    — Stability AI REST API, credits-based
     # gemini       — Google Imagen 3 via Gemini API (same key as LLM, best quality)
     image_provider: Literal[
-        "placeholder", "stable_diffusion", "automatic1111", "pollinations", "stability", "gemini"
+        "placeholder", "comfyui", "stable_diffusion", "automatic1111", "pollinations", "stability", "gemini"
     ] = "placeholder"
+    comfyui_base_url: str = "http://127.0.0.1:8188"
+    comfyui_generation_timeout_seconds: int = 900
+    comfyui_connect_timeout_seconds: int = 30
+    comfyui_poll_interval_seconds: float = 2.0
+    visual_stage_timeout_seconds: int = 1200
+    comfyui_scene_workflow: Path = Path("./workflows/character_master.json")
     gemini_image_model: str = "gemini-3.1-flash-image"
     sd_model_id: str = "runwayml/stable-diffusion-v1-5"
     a1111_base_url: str = "http://localhost:7860"

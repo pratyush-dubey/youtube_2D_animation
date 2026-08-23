@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 import time
+import traceback
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,7 +17,7 @@ from typing import Any
 
 import structlog
 
-from app.agents.base import AgentContext, AgentResult
+from app.agents.base import AgentContext, AgentResult, is_retryable_exception
 from app.config.settings import settings
 
 logger = structlog.get_logger(__name__)
@@ -67,17 +68,18 @@ class ProductionGraph:
         GraphNode("research", "Research"),
         GraphNode("story", "Story", ("research",)),
         GraphNode("script", "Script", ("story",)),
-        GraphNode("characters", "Characters", ("script",)),
-        GraphNode("visuals", "Visuals", ("characters",)),
-        GraphNode("shots", "Shot Plan", ("visuals",)),
+        GraphNode("voice", "Narration", ("script",)),
+        GraphNode("characters", "Characters", ("research",)),
+        GraphNode("timeline", "Master Timeline", ("voice", "characters")),
+        GraphNode("visuals", "Visuals", ("characters", "timeline")),
+        GraphNode("shots", "Shot Plan", ("visuals", "timeline")),
         GraphNode("animation", "Animation", ("shots",)),
-        GraphNode("voice", "Voice", ("script", "shots")),
-        GraphNode("sound", "Sound", ("shots",)),
-        GraphNode("music", "Music", ("story",)),
+        GraphNode("sound", "Sound", ("shots", "timeline")),
+        GraphNode("music", "Music", ("story", "timeline")),
         GraphNode("rendering", "Rendering", ("animation", "voice", "sound", "music")),
         GraphNode("subtitles", "Subtitles", ("rendering",)),
-        GraphNode("thumbnail", "Thumbnail", ("rendering",)),
         GraphNode("seo", "SEO", ("rendering", "subtitles")),
+        GraphNode("thumbnail", "Thumbnail", ("rendering", "seo")),
         GraphNode("quality", "Quality Control", ("rendering", "subtitles", "thumbnail", "seo")),
         GraphNode("youtube", "YouTube", ("quality",)),
     )
@@ -105,6 +107,8 @@ class SpecializedDirector:
     @staticmethod
     def require(result: AgentResult) -> Any:
         if not result.success:
+            if result.exception is not None:
+                raise result.exception
             raise RuntimeError(result.error or f"{result.agent_name} failed")
         return result.output
 
@@ -149,12 +153,59 @@ class CharacterDirector(SpecializedDirector):
 
 class VisualDirector(SpecializedDirector):
     name = "visuals"
-    def __init__(self, llm): self.llm = llm
+    def __init__(self, llm, job_id: str = "visual-diagnostic"):
+        self.llm = llm
+        self.job_id = job_id
     def run(self, context):
         from app.agents.asset_agent import AssetAgent
-        from app.agents.storyboard_agent import StoryboardAgent
-        self.require(StoryboardAgent(llm=self.llm).run(context))
-        return self.require(AssetAgent().run(context))
+        from app.agents.storyboard_agent import StoryboardAgent, _write_storyboard
+        from app.image_generation.visual_stage import VisualStageLog, VisualTrace, write_failure_report, write_visual_exception
+
+        audit = VisualStageLog(context.output_dir, context.project_id)
+        trace = VisualTrace(context.output_dir, context.project_id)
+        context.visual_trace = trace
+        started = time.perf_counter()
+        from app.api.job_runner import _job_trace
+        _job_trace(context.project_id, "WORKER_ENTERED_VISUALS", self.job_id, worker_state="visuals")
+        trace.mark(1)
+        audit.emit("VISUALS_STARTED")
+        try:
+            trace.mark(2, output_dir=str(context.output_dir.resolve()))
+            if context.script is None:
+                raise RuntimeError("Visuals cannot start because the parsed script is missing")
+            trace.mark(3, script_type=type(context.script).__name__)
+            audit.emit("VISUALS_SCRIPT_PARSED")
+            trace.mark(4, character_count=len((context.character_sheet or {}).get("characters", [])))
+            trace.mark(5, operation="master_timeline_storyboard" if context.master_timeline else "StoryboardAgent.run")
+            if not context.master_timeline:
+                self.require(StoryboardAgent(llm=self.llm).run(context))
+            audit.emit("VISUAL_SCENES_PLANNED", scene_count=len(context.storyboard or []))
+            shot_count = sum(max(len(scene.get("shots") or []), 1) for scene in context.storyboard or [])
+            trace.mark(6, scene_count=len(context.storyboard or []), shot_count=shot_count)
+            audit.emit("VISUAL_PROMPTS_CREATED", scene_count=len(context.storyboard or []))
+            trace.mark(7, prompt_count=len(context.storyboard or []))
+            trace.mark(8, provider=settings.image_provider)
+            output = self.require(AssetAgent().run(context))
+            # Asset preparation enriches each scene with quality reports,
+            # resolved layers and character bindings. Persist those additions
+            # so a later stage-only retry hydrates the same validated scene
+            # data instead of treating the reports as missing.
+            _write_storyboard(
+                context.output_dir / "storyboard.json",
+                context.storyboard,
+                context.script,
+            )
+            trace.mark(19, asset_count=len(output))
+            audit.emit("VISUALS_COMPLETED", duration=time.perf_counter() - started, asset_count=len(output))
+            return output
+        except Exception as exc:
+            write_visual_exception(context.output_dir, context.project_id, exc)
+            failure_path = context.output_dir / "reports" / "visual_failure.json"
+            if not failure_path.is_file():
+                provider_name = getattr(self.llm, "provider_name", "unknown")
+                write_failure_report(context.output_dir, exc, provider=f"llm_{provider_name}")
+            audit.emit("VISUALS_FAILED", duration=time.perf_counter() - started, error=f"{type(exc).__name__}: {exc}")
+            raise
 
 
 class ShotDirector(SpecializedDirector):
@@ -187,10 +238,102 @@ class SoundDirector(SpecializedDirector):
 class VoiceDirector(SpecializedDirector):
     name = "voice"
     def run(self, context):
-        if not context.audio_plan:
-            SoundDirector().run(context)
         from app.agents.voice_agent import VoiceAgent
         return self.require(VoiceAgent().run(context))
+
+
+class TimelineDirector(SpecializedDirector):
+    name = "timeline"
+
+    def run(self, context):
+        from app.timeline.master import build_master_timeline
+        if not context.narration_alignment:
+            raise RuntimeError("Measured narration alignment is required before timeline planning")
+        # Use the real person CharacterAgent identified (its name is the exact
+        # key app.agents.asset_agent._attach_character_assets matches against
+        # to wire up character_rig_manifest) instead of a topic-derived slug -
+        # otherwise no scene's character_name ever matches a character-sheet
+        # entry and the renderer never finds a rig to animate.
+        primary_character = next(
+            (
+                str(c.get("name", "")).strip()
+                for c in (context.character_sheet or {}).get("characters", [])
+                if str(c.get("name", "")).strip()
+            ),
+            "",
+        )
+        character_id = primary_character or re.sub(
+            r"[^a-z0-9]+", "_", (context.chosen_topic or context.topic).lower()
+        ).strip("_")
+        # "context-specific documentary reconstruction" used to be a literal,
+        # unfilled placeholder here for every single scene - it gave the image
+        # generator nothing concrete to draw, so every background regressed to
+        # a generic moody-forest default regardless of the actual topic. Each
+        # narration sentence already describes what's happening in that beat;
+        # ground the environment/image prompt in it (plus the topic) instead.
+        topic_label = str(context.chosen_topic or context.topic).strip()
+        sources = [
+            {
+                "text": item["text"], "audio_path": item["audio_path"],
+                "character_id": character_id,
+                "environment": f"{topic_label}: {' '.join(str(item['text']).split())[:180]}",
+                "visual_type": "ai_reconstruction",
+            }
+            for item in context.narration_alignment
+        ]
+        timeline = build_master_timeline(
+            sources, character_id=character_id,
+            output_path=context.output_dir / "timeline.json",
+        )
+        context.master_timeline = timeline
+        scenes = []
+        for index, shot in enumerate(timeline["shots"], 1):
+            action = shot["action"]
+            camera_move = {
+                "tracking": "track_character", "follow": "follow_character",
+                "subtle_orbit": "orbit_simulation", "dolly": "dolly_in",
+                "settle": "handheld", "locked_medium": "static", "locked": "static",
+            }.get(shot["camera"]["move"], "slow_push")
+            scenes.append({
+                "scene_id": index, "duration_seconds": shot["duration"],
+                "narration": shot["narration_segment"]["text"],
+                "visual_description": f"{shot['environment']}; {character_id} performs {action}",
+                "image_prompt": f"AI reconstruction, {shot['environment']}, full-body {character_id}, action-ready composition, no text",
+                "visual_type": shot["visual_type"], "still_image_shot": shot["still_image_shot"],
+                # AssetAgent._prepare_scene_asset only attaches character_rig_manifest
+                # (and runs the asset quality gate) for DRAFT/PRODUCTION scenes; a
+                # scene with no visual_quality silently skips rig attachment.
+                "visual_quality": settings.visual_quality,
+                "character_name": character_id, "character_action": action,
+                "character_motion": action, "character_is_fictional": False,
+                "environment": shot["environment"], "emotion": shot["emotion"],
+                "voice_emotion": shot["emotion"], "music_mood": shot["music"],
+                "sfx": shot["sound_effects"], "asset_type": "cinematic-reenactment",
+                "sfx_events": [
+                    {**event, "local_start": round(float(event["start"]) - float(shot["start"]), 3)}
+                    for event in timeline["tracks"]["sfx"] if event.get("shot_id") == shot["shot_id"]
+                ],
+                "shots": [{
+                    "id": shot["shot_id"], "start": 0.0, "duration": shot["duration"],
+                    "shot_type": shot["framing"], "camera": camera_move,
+                    "characters": shot["characters"], "action": action,
+                    "expression": shot["emotion"], "subject": shot["environment"],
+                    "transition": "cut", "master_start": shot["start"],
+                    "master_end": shot["end"],
+                    "character_position": shot.get("character_position"),
+                }],
+            })
+        context.storyboard = scenes
+        storyboard = {
+            "storyboard_version": 5, "clock": "measured_narration_seconds",
+            "total_scenes": len(scenes), "total_duration_seconds": timeline["duration"],
+            "scenes": scenes,
+        }
+        (context.output_dir / "storyboard.json").write_text(json.dumps(storyboard, indent=2), encoding="utf-8")
+        (context.output_dir / "shot_manifest.json").write_text(
+            json.dumps({"schema_version": "2.0", "shots": timeline["shots"]}, indent=2), encoding="utf-8",
+        )
+        return timeline
 
 
 class MusicDirector(SpecializedDirector):
@@ -268,13 +411,32 @@ class Director:
 
     state_filename = "director_state.json"
 
-    def __init__(self, job_id: str, project_id: str, video_request: VideoRequest):
+    def __init__(
+        self, job_id: str, project_id: str, video_request: VideoRequest,
+        resume_stage: str | None = None,
+    ):
         ProductionGraph.validate()
         self.job_id, self.project_id, self.request = job_id, project_id, video_request
+        self.resume_stage = resume_stage
         self.output_dir = Path(settings.output_dir) / project_id
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.state_path = self.output_dir / self.state_filename
-        self.state = self._new_state()
+        persisted = self.read_state(project_id) if resume_stage else None
+        self.state = persisted or self._new_state()
+        self.state["job_id"] = job_id
+        self.state["graph"] = ProductionGraph.as_dict()
+        for node in ProductionGraph.nodes:
+            self.state.setdefault("stages", {}).setdefault(
+                node.name,
+                {"label": node.label, "status": "pending", "progress": 0, "attempts": 0, "message": None},
+            )
+        # A stage that later completed must not keep an obsolete error from an
+        # earlier retry; otherwise the UI reports failure and success together.
+        for stage in self.state.get("stages", {}).values():
+            if stage.get("status") == "complete":
+                stage.pop("error", None)
+                stage.pop("error_type", None)
+                stage["message"] = None
 
     def _new_state(self) -> dict[str, Any]:
         return {
@@ -295,6 +457,14 @@ class Director:
             return None
 
     def _save(self) -> None:
+        if self.state_path.is_file():
+            try:
+                persisted = json.loads(self.state_path.read_text(encoding="utf-8"))
+                if persisted.get("watchdog_failure") and self.state.get("state") != "VISUALS_FAILED":
+                    self.state = persisted
+                    return
+            except (OSError, ValueError):
+                pass
         self.state["updated_at"] = _now()
         tmp = self.state_path.with_suffix(".tmp")
         tmp.write_text(json.dumps(self.state, indent=2), encoding="utf-8")
@@ -316,14 +486,79 @@ class Director:
     def _directors(self, llm) -> dict[str, SpecializedDirector]:
         return {
             "research": ResearchDirector(llm), "story": StoryDirector(),
-            "script": ScriptDirector(llm), "characters": CharacterDirector(llm),
-            "visuals": VisualDirector(llm), "shots": ShotDirector(),
-            "animation": AnimationDirector(), "voice": VoiceDirector(),
+            "script": ScriptDirector(llm), "voice": VoiceDirector(),
+            "timeline": TimelineDirector(), "characters": CharacterDirector(llm),
+            "visuals": VisualDirector(llm, self.job_id), "shots": ShotDirector(),
+            "animation": AnimationDirector(),
             "sound": SoundDirector(), "music": MusicDirector(),
             "rendering": _RenderingDirector(), "subtitles": SubtitleDirector(),
             "thumbnail": ThumbnailDirector(llm), "seo": SEODirector(llm),
             "quality": QualityDirector(),
         }
+
+    def _hydrate_context(self, context: AgentContext) -> None:
+        """Restore completed stage outputs without invoking their workers again."""
+        from app.research.schemas import ResearchResult
+        from app.script.schemas import ScriptResult
+        from app.seo.schemas import SEOMetadata
+
+        loaders = (
+            ("research.json", "research", ResearchResult),
+            ("script.json", "script", ScriptResult),
+            ("seo.json", "seo", SEOMetadata),
+        )
+        for filename, attribute, model in loaders:
+            path = self.output_dir / filename
+            if path.is_file():
+                try:
+                    setattr(context, attribute, model.model_validate_json(path.read_text(encoding="utf-8")))
+                except (ValueError, OSError):
+                    pass
+
+        for filename, attribute, key in (
+            ("characters.json", "character_sheet", None),
+            ("storyboard.json", "storyboard", "scenes"),
+            ("audio/audio_plan.json", "audio_plan", None),
+        ):
+            path = self.output_dir / filename
+            if path.is_file():
+                try:
+                    value = json.loads(path.read_text(encoding="utf-8"))
+                    setattr(context, attribute, value.get(key, []) if key else value)
+                except (ValueError, OSError):
+                    pass
+
+        for filename, attribute, key in (
+            ("timeline.json", "master_timeline", None),
+            ("narration_alignment.json", "narration_alignment", "segments"),
+        ):
+            path = self.output_dir / filename
+            if path.is_file():
+                try:
+                    value = json.loads(path.read_text(encoding="utf-8"))
+                    setattr(context, attribute, value.get(key, []) if key else value)
+                except (ValueError, OSError):
+                    pass
+
+        images_dir = self.output_dir / "images"
+        context.images = {
+            int(match.group(1)): path
+            for path in images_dir.glob("scene_*.jpg")
+            if (match := re.match(r"scene_(\d+)\.jpg$", path.name))
+        }
+        narration_dir = self.output_dir / "audio" / "narration"
+        context.narration_files = {
+            int(match.group(1)): path
+            for path in narration_dir.glob("scene_*.*")
+            if (match := re.match(r"scene_(\d+)\.(?:wav|mp3)$", path.name))
+        }
+        for candidate in (self.output_dir / "final.mp4", self.output_dir / "subtitled.mp4"):
+            if candidate.is_file():
+                context.video_path = candidate
+                break
+        thumbnail = self.output_dir / "thumbnail.jpg"
+        if thumbnail.is_file():
+            context.thumbnail_path = thumbnail
 
     def execute(self) -> dict[str, Any]:
         from app.api.job_store import job_store
@@ -335,7 +570,28 @@ class Director:
             target_duration_seconds=self.request.duration_seconds,
             aspect_ratio=self.request.aspect_ratio, output_dir=self.output_dir,
         )
+        self._hydrate_context(context)
         executable = [node for node in ProductionGraph.nodes if node.name != "youtube"]
+        start_index = 0
+        if self.resume_stage:
+            names = [node.name for node in executable]
+            if self.resume_stage not in names:
+                raise ValueError(f"Unknown retry stage: {self.resume_stage}")
+            start_index = names.index(self.resume_stage)
+            node_by_name = {node.name: node for node in executable}
+
+            def include_incomplete_dependencies(stage_name: str) -> None:
+                nonlocal start_index
+                for dependency in node_by_name[stage_name].dependencies:
+                    if self.state["stages"][dependency]["status"] != "complete":
+                        start_index = min(start_index, names.index(dependency))
+                        include_incomplete_dependencies(dependency)
+
+            include_incomplete_dependencies(self.resume_stage)
+            self.state["stages"][self.resume_stage].update(
+                status="pending", progress=0, message=None,
+            )
+            self.state["requires_attention"] = False
         self.state["state"] = "PRODUCING"
         self._project_status("PRODUCING")
         self._save()
@@ -358,7 +614,8 @@ class Director:
                 self._save()
                 llm = get_llm_provider("ollama")
             workers = self._directors(llm)
-            for index, node in enumerate(executable):
+            for index in range(start_index, len(executable)):
+                node = executable[index]
                 self._run_stage(node, workers[node.name], context)
                 self.state["progress"] = round((index + 1) * 100 / len(executable))
                 self._save()
@@ -377,10 +634,13 @@ class Director:
             self._project_status("EDITOR_REVIEW")
             job_store.update(self.job_id, status="requires_attention", error=self._friendly_error("quality", exc), finished_at=_now())
         except Exception as exc:
-            stage = self._active_stage() or "production"
-            self.state["state"] = "REQUIRES_ATTENTION"
+            stage = self._active_stage() or next(
+                (name for name, value in self.state["stages"].items() if value["status"] == "failed"),
+                "production",
+            )
+            self.state["state"] = "VISUALS_FAILED" if stage == "visuals" else "REQUIRES_ATTENTION"
             self.state["requires_attention"] = True
-            self._project_status("REQUIRES_ATTENTION")
+            self._project_status(self.state["state"])
             job_store.update(self.job_id, status="requires_attention", error=self._friendly_error(stage, exc), finished_at=_now())
             logger.exception("director_failed", project=self.project_id, stage=stage)
         self._save()
@@ -391,25 +651,96 @@ class Director:
         for dependency in node.dependencies:
             if self.state["stages"][dependency]["status"] != "complete":
                 raise RuntimeError(f"{node.label} is waiting for {dependency}")
-        for attempt in range(1, settings.director_max_stage_retries + 2):
-            item.update(status="running", progress=10, attempts=attempt, message=None)
+        maximum_attempts = 1 if node.name == "visuals" else settings.director_max_stage_retries + 1
+        for attempt in range(1, maximum_attempts + 1):
+            item.update(status="running", progress=0, attempts=attempt, message=None)
+            item.pop("error", None)
+            item.pop("error_type", None)
+            if node.name == "visuals":
+                self.state["state"] = "VISUALS_RUNNING"
+
+                def visual_progress(update: dict[str, Any]) -> None:
+                    completed = int(update.get("completed", 0))
+                    total = max(int(update.get("total", 0)), 1)
+                    executable_count = len([entry for entry in ProductionGraph.nodes if entry.name != "youtube"])
+                    visual_index = next(
+                        index for index, entry in enumerate(ProductionGraph.nodes)
+                        if entry.name == "visuals"
+                    )
+                    self.state["progress"] = round(
+                        (visual_index + completed / total) * 100 / executable_count,
+                        1,
+                    )
+                    item.update(
+                        progress=round(completed * 100 / total, 1),
+                        completed=completed,
+                        total=total,
+                        scene_id=update.get("scene_id"),
+                        shot_id=update.get("shot_id"),
+                        message=update.get("message"),
+                    )
+                    self._save()
+                    if context.visual_trace:
+                        context.visual_trace.mark(
+                            18, scene_id=update.get("scene_id"), shot_id=update.get("shot_id"),
+                            completed=completed, total=total, state="VISUALS_RUNNING",
+                        )
+
+                context.progress_callback = visual_progress
             self._save()
             try:
                 output = worker.run(context)
                 item.update(status="complete", progress=100, message=None)
+                item.pop("error", None)
+                item.pop("error_type", None)
+                if node.name == "visuals":
+                    self.state["state"] = "PRODUCING"
+                    context.progress_callback = None
                 if node.name == "quality" and isinstance(output, dict):
                     self.state["quality_score"] = output.get("score")
                 return
             except Exception as exc:
-                if attempt <= settings.director_max_stage_retries:
+                if attempt < maximum_attempts and is_retryable_exception(exc):
                     item.update(status="retrying", progress=35, message=self._friendly_error(node.name, exc))
                     self._save()
                     if isinstance(exc, QualityBelowThreshold):
                         self._auto_repair(exc, context)
                     time.sleep(min(settings.retry_backoff_base * attempt, 5))
                     continue
-                item.update(status="failed", progress=100, message=self._friendly_error(node.name, exc))
+                item.update(status="failed", message=self._friendly_error(node.name, exc), error_type=type(exc).__name__, error=str(exc))
+                self._write_stage_failure(node.name, exc, item)
+                if node.name == "visuals":
+                    self.state["state"] = "VISUALS_FAILED"
+                    context.progress_callback = None
                 raise
+
+    def _write_stage_failure(self, stage: str, exc: Exception, item: dict[str, Any]) -> None:
+        """Persist the exact exception and cause chain for every production stage."""
+        tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        frames = traceback.extract_tb(exc.__traceback__) if exc.__traceback__ else []
+        final = frames[-1] if frames else None
+        chain = []
+        current: BaseException | None = exc
+        seen: set[int] = set()
+        while current is not None and id(current) not in seen:
+            seen.add(id(current))
+            chain.append({"type": type(current).__name__, "message": str(current)})
+            current = current.__cause__ or current.__context__
+        payload = {
+            "project_id": self.project_id, "job_id": self.job_id,
+            "stage": stage, "status": "failed",
+            "exception_type": type(exc).__name__, "exception_message": str(exc),
+            "exception_chain": chain, "traceback": tb,
+            "file": final.filename if final else None,
+            "line": final.lineno if final else None,
+            "attempts": item.get("attempts"), "timestamp": _now(),
+        }
+        reports = self.output_dir / "reports"
+        logs = self.output_dir / "logs"
+        reports.mkdir(parents=True, exist_ok=True)
+        logs.mkdir(parents=True, exist_ok=True)
+        (reports / f"{stage}_failure.json").write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+        (logs / f"{stage}_exception.log").write_text(tb, encoding="utf-8")
 
     def _auto_repair(self, failure: QualityBelowThreshold, context: AgentContext) -> None:
         """Repair only implicated assets; never restart an otherwise valid production."""
@@ -462,11 +793,13 @@ class Director:
     def _friendly_error(stage: str, exc: Exception) -> str:
         messages = {
             "characters": "Character generation temporarily unavailable.",
-            "visuals": "Visual generation temporarily unavailable.",
+            "visuals": f"{type(exc).__name__}: {exc}",
             "voice": "Voice generation failed after automatic retries.",
             "rendering": "Rendering failed after automatic retries.",
             "quality": "Quality control needs editor review.",
         }
+        if stage in {"research", "story", "script", "characters", "visuals", "shots"}:
+            return f"{type(exc).__name__}: {exc}"
         return messages.get(stage, f"{stage.replace('_', ' ').title()} could not be completed automatically.")
 
 

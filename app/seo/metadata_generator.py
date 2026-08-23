@@ -6,6 +6,7 @@ using the configured LLM provider.
 from __future__ import annotations
 
 import json
+import re
 
 import structlog
 
@@ -103,7 +104,11 @@ class SEOGenerator:
             prompt,
             schema_hint="SEOMetadata",
             temperature=0.6,
-            max_tokens=settings.llm_max_tokens,
+            # SEO metadata is bounded (five titles, description, tags and
+            # chapters).  Allowing the global 8K-token ceiling makes local
+            # models spend several unnecessary minutes generating text and
+            # can hit the request timeout before the next pipeline stage.
+            max_tokens=min(settings.llm_max_tokens, 2500),
         )
 
         self.cost_tracker.record(
@@ -122,7 +127,12 @@ class SEOGenerator:
         if not raw.get("best_title"):
             raw["best_title"] = script.title
 
-        result = SEOMetadata.model_validate(raw)
+        from app.metadata.sanitizer import sanitize_metadata_payload
+        sanitized = sanitize_metadata_payload(raw)
+        sanitized["best_title"] = _supported_documentary_title(
+            sanitized, script.title, len(script.sections), style,
+        )
+        result = SEOMetadata.model_validate(sanitized)
         self._save(result)
 
         logger.info(
@@ -191,3 +201,26 @@ def _build_chapters(script: ScriptResult) -> list:
             )
         elapsed += int(section.duration_seconds)
     return chapters
+
+
+def _supported_documentary_title(
+    metadata: dict, script_title: str, section_count: int, style: str,
+) -> str:
+    """Reject unsupported list promises and generic clickbait."""
+    candidates = [str(metadata.get("best_title", "")).strip()]
+    candidates.extend(
+        str(item.get("title", "")).strip()
+        for item in metadata.get("title_candidates", []) if isinstance(item, dict)
+    )
+    blocked = ("shocking", "you won't believe", "secret truth", "mind-blowing")
+    for title in candidates:
+        if not title or any(term in title.casefold() for term in blocked):
+            continue
+        match = re.match(r"^\s*(\d+)\b", title)
+        if match and int(match.group(1)) != section_count:
+            continue
+        return title[:60]
+    fallback = str(script_title).strip() or "Documentary"
+    if "documentary" in str(style).casefold() and "documentary" not in fallback.casefold():
+        fallback = f"{fallback}: A Documentary"
+    return fallback[:60]

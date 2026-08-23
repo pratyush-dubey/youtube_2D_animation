@@ -52,6 +52,8 @@ def _artifacts(project_id: str) -> dict:
             target.update(json.loads((root / filename).read_text(encoding="utf-8")))
         except (OSError, ValueError):
             pass
+    from app.metadata.sanitizer import sanitize_metadata_payload
+    seo = sanitize_metadata_payload(seo)
     return {
         "video": f"/api/projects/{project_id}/media?path=final.mp4" if (root / "final.mp4").is_file() else None,
         "thumbnail": f"/api/projects/{project_id}/media?path=thumbnail.jpg" if (root / "thumbnail.jpg").is_file() else None,
@@ -155,6 +157,61 @@ def request_changes(project_id: str, req: ChangeRequest):
     video_request = VideoRequest(project["request"], project["duration_seconds"], project["language"], project["style"])
     job_id = submit_director_job(project_id, video_request)
     return {"project_id": project_id, "job_id": job_id, "state": "QUEUED", "routed_to": target}
+
+
+@router.post("/projects/{project_id}/stages/{stage}/retry", status_code=202)
+def retry_failed_stage(project_id: str, stage: str):
+    """Retry exactly one failed graph stage, then continue pending dependents."""
+    project = _project(project_id)
+    state = Director.read_state(project_id)
+    if not state or stage not in state.get("stages", {}):
+        raise HTTPException(status_code=404, detail="Production stage not found")
+    if state["stages"][stage].get("status") != "failed":
+        raise HTTPException(status_code=409, detail="Only a failed stage can be retried")
+
+    from app.api.job_store import job_store
+    active = job_store.get_latest_for_project(project_id)
+    if active and active.get("status") in {"queued", "running"}:
+        raise HTTPException(status_code=409, detail="A production job is already running")
+
+    from app.api.job_runner import submit_director_stage_retry
+    video_request = VideoRequest(
+        project["request"], project["duration_seconds"],
+        project["language"], project["style"],
+    )
+    job_id = submit_director_stage_retry(project_id, video_request, stage)
+    return {
+        "project_id": project_id, "job_id": job_id,
+        "state": "QUEUED", "retrying_stage": stage,
+        "preserved_stages": [
+            name for name, item in state["stages"].items()
+            if item.get("status") == "complete"
+        ],
+    }
+
+
+@router.post("/projects/{project_id}/diagnostics/comfyui")
+def test_comfyui(project_id: str):
+    """Advanced-mode health/model/workflow check; does not generate an image."""
+    _project(project_id)
+    from app.image_generation.comfyui_client import ComfyUIClient
+
+    client = ComfyUIClient(settings.comfyui_base_url, timeout=15)
+    health = client.health()
+    client.validate_checkpoint("DreamShaper_8_pruned.safetensors")
+    workflow = json.loads(Path(settings.comfyui_scene_workflow).read_text(encoding="utf-8"))
+    client.validate_workflow(workflow)
+    return {"status": "PASS", "health": True, "checkpoint": True, "workflow": True, "system": health.get("system", {})}
+
+
+@router.post("/projects/{project_id}/diagnostics/visual", status_code=202)
+def test_visual_generation(project_id: str):
+    """Queue exactly one isolated 512x768 image; never block this request."""
+    _project(project_id)
+    from app.api.job_runner import submit_visual_diagnostic_job
+
+    job_id = submit_visual_diagnostic_job(project_id)
+    return {"status": "QUEUED", "job_id": job_id, "poll": f"/api/jobs/{job_id}"}
 
 
 @router.post("/projects/{project_id}/approve", status_code=202)

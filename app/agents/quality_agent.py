@@ -57,8 +57,14 @@ class QualityAgent(Agent):
                 has_audio = any(s["codec_type"] == "audio" for s in streams)
                 report.add("video_has_stream", has_video)
                 report.add("video_has_audio", has_audio)
-                report.add("video_min_duration", duration >= 30,
-                           f"{duration:.0f}s (min 30s)")
+                target = max(float(context.target_duration_seconds or 0), 1.0)
+                minimum = target * 0.85
+                maximum = target * 1.15
+                report.add(
+                    "video_target_duration",
+                    minimum <= duration <= maximum,
+                    f"{duration:.1f}s (target {target:.0f}s; allowed {minimum:.1f}-{maximum:.1f}s)",
+                )
                 # Check resolution
                 for s in streams:
                     if s.get("codec_type") == "video":
@@ -67,6 +73,21 @@ class QualityAgent(Agent):
                         report.add("video_resolution",
                                    w >= 1280 and h >= 720,
                                    f"{w}x{h}")
+                if context.master_timeline:
+                    try:
+                        from app.qa.media import inspect_render
+                        cues_path = context.output_dir / "audio" / "audio_cues.json"
+                        cues = json.loads(cues_path.read_text(encoding="utf-8")) if cues_path.is_file() else []
+                        metadata = context.seo.model_dump() if context.seo and hasattr(context.seo, "model_dump") else {}
+                        post = inspect_render(
+                            context.video_path, context.master_timeline, metadata=metadata,
+                            audio_cues=cues, subtitle_path=context.output_dir / "subtitles.srt",
+                            output_path=context.output_dir / "post_render_qa.json",
+                        )
+                        for gate, result in post["gates"].items():
+                            report.add(f"post_render_{gate}", bool(result["passed"]), json.dumps(result, default=str)[:600])
+                    except Exception as exc:
+                        report.add("post_render_qa", False, str(exc))
             except Exception as exc:
                 report.add("video_probe", False, str(exc))
         else:
@@ -140,6 +161,20 @@ class QualityAgent(Agent):
                 for scene in production_scenes:
                     scene_id = scene.get("scene_id")
                     quality_items = scene.get("asset_quality") or []
+                    # Older/resumed projects may have validated image files
+                    # but predate persistence of the per-scene report. Rebuild
+                    # the deterministic report from the actual artifact.
+                    if not quality_items:
+                        image_path = context.images.get(int(scene_id)) if scene_id is not None else None
+                        if image_path and image_path.is_file():
+                            from dataclasses import asdict
+                            from app.images.production_assets import evaluate_asset
+                            rebuilt = asdict(evaluate_asset(
+                                image_path,
+                                str(scene.get("asset_type", "environment")),
+                            ))
+                            quality_items = [rebuilt]
+                            scene["asset_quality"] = quality_items
                     if isinstance(quality_items, dict):
                         quality_items = [quality_items]
                     if not quality_items:
@@ -175,14 +210,19 @@ class QualityAgent(Agent):
                     )
                     for c in context.character_sheet.get("characters", [])
                 }
-                animated_character_scenes = [
+                eligible_character_scenes = [
                     s.get("scene_id") for s in context.storyboard
-                    if s.get("character_name") and s.get("character_motion") and (
+                    if s.get("character_name") and (
                         bool(s.get("character_is_fictional", False))
                         or reference_status.get(
                             str(s.get("character_name", "")).casefold(), ""
                         ).startswith("verified")
                     )
+                ]
+                animated_character_scenes = [
+                    s.get("scene_id") for s in context.storyboard
+                    if s.get("scene_id") in eligible_character_scenes
+                    and s.get("character_motion")
                 ]
                 unsafe_identity_scenes = [
                     s.get("scene_id") for s in context.storyboard
@@ -198,12 +238,17 @@ class QualityAgent(Agent):
                     f"missing verified references: {unsafe_identity_scenes}"
                     if unsafe_identity_scenes else "all named people are reference-locked",
                 )
-                report.add(
-                    "animated_character_presence",
-                    bool(animated_character_scenes),
-                    f"animated character scenes: {animated_character_scenes}"
-                    if animated_character_scenes else "no animated character scenes",
-                )
+                # A documentary can intentionally use maps, documents and
+                # atmospheric reenactments without assigning a character to a
+                # scene. Only enforce animation when the storyboard actually
+                # requests an eligible character performance.
+                if eligible_character_scenes:
+                    report.add(
+                        "animated_character_presence",
+                        bool(animated_character_scenes),
+                        f"animated character scenes: {animated_character_scenes}"
+                        if animated_character_scenes else "no animated character scenes",
+                    )
 
         if context.script:
             missing_sections = _missing_script_sections(context.script, context.storyboard or [])

@@ -40,8 +40,36 @@ def test_checked_in_illustrated_assets_pass_quality_gate():
     assert evaluate_asset(character, "character").passed
 
 
+def test_character_with_unremoved_backdrop_prop_is_rejected(tmp_path):
+    """A provider that ignores 'plain background' and paints a whole room/
+    poster scene must not pass just because *some* pixels got cut - the rig
+    extraction downstream assumes a standing-figure bbox and produces torn,
+    misplaced body parts otherwise (see production_assets.py's
+    silhouette_shape check)."""
+    from app.images.production_assets import evaluate_asset
+
+    path = tmp_path / "prop_scene.png"
+    # A wide, near-square opaque "canvas propped against a wall" region with
+    # only a small person-shaped notch of transparency - width/height close
+    # to 1.0, nothing like a standing human silhouette (~0.15-0.65).
+    image = Image.new("RGBA", (1000, 1200), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((50, 100, 950, 1100), fill=(210, 210, 205, 255))
+    for x in range(50, 950, 15):
+        draw.line((x, 100, x, 1100), fill=(190 + x % 20, 190 + x % 20, 185, 255), width=2)
+    draw.ellipse((450, 200, 550, 300), fill=(200, 150, 120, 255))
+    draw.rectangle((470, 300, 530, 700), fill=(220, 220, 220, 255))
+    path_ = path
+    image.save(path_)
+
+    report = evaluate_asset(path_, "character")
+
+    assert report.passed is False
+    assert "silhouette_shape" in report.problems
+
+
 def test_background_removal_and_rig_extraction(tmp_path):
-    from app.images.production_assets import extract_character_rig, remove_connected_background
+    from app.images.production_assets import extract_character_rig, remove_subject_background
 
     source = Image.new("RGB", (1000, 1200), "white")
     draw = ImageDraw.Draw(source)
@@ -53,12 +81,15 @@ def test_background_removal_and_rig_extraction(tmp_path):
     cutout = tmp_path / "cutout.png"
     source.save(raw)
 
-    remove_connected_background(raw, cutout)
+    remove_subject_background(raw, cutout)
     assert Image.open(cutout).getchannel("A").getextrema() == (0, 255)
 
     manifest = extract_character_rig(cutout, tmp_path / "rig")
     assert manifest.exists()
-    assert len(list((tmp_path / "rig").glob("*.png"))) >= 4
+    rig = __import__("json").loads(manifest.read_text(encoding="utf-8"))
+    assert rig["rig_version"] == 3
+    assert {"head", "torso", "left_upper_leg", "left_lower_leg", "right_upper_arm"} <= set(rig["parts"])
+    assert "mouth" in rig["joints"]
 
 
 def test_provider_reports_reference_limitations(tmp_path):

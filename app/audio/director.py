@@ -27,6 +27,7 @@ class AudioDirector:
         output_dir: Path,
         language: str = "English",
         characters: dict[str, Any] | None = None,
+        narration_alignment: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         if not scenes:
             raise ValueError("AudioDirector requires at least one planned scene")
@@ -37,10 +38,14 @@ class AudioDirector:
         events: list[AudioEvent] = []
         shot_plans: list[dict[str, Any]] = []
         scene_cursor = 0.0
+        aligned = {str(item.get("scene_id")): item for item in (narration_alignment or [])}
 
         for scene_index, scene in enumerate(scenes, 1):
             scene_id = scene.get("scene_id", scene_index)
-            duration = float(scene.get("duration_seconds", 0) or 0)
+            measured = aligned.get(str(scene_id))
+            if measured:
+                scene_cursor = float(measured["start"])
+            duration = float(measured["duration"] if measured else (scene.get("duration_seconds", 0) or 0))
             shots = scene.get("shots") or [{
                 "id": f"{scene_id}A", "start": 0.0, "duration": duration or 5.0,
                 "action": scene.get("character_action", "observe"),
@@ -71,13 +76,13 @@ class AudioDirector:
                 shot_events: list[AudioEvent] = []
                 if narration:
                     markup = self._speech_markup(narration, emotion)
-                    estimated = min(max(1.0, len(narration.split()) / (150 * narrator.speaking_rate) * 60), shot_duration)
+                    measured_duration = float(measured["duration"]) if measured and shot_index == 0 else shot_duration
                     shot_events.append(AudioEvent(
                         audio_id=f"voice_{scene_id}_{shot_id}", type="voice", start_time=start,
-                        duration=estimated, source=f"voicepack://{narrator.voice_id}", volume_db=_LEVELS["voice"],
+                        duration=measured_duration, source=(str(measured["audio_path"]) if measured else f"voicepack://{narrator.voice_id}"), volume_db=_LEVELS["voice"],
                         fade_in=.02, fade_out=.08, priority=100, scene=scene_id, shot=shot_id,
                         character="narrator", emotion=emotion, layer="narration", text=markup,
-                        language=narrator.language, pronunciation=pronunciation, asset_available=provider.available,
+                        language=narrator.language, pronunciation=pronunciation, asset_available=bool(measured) or provider.available,
                     ))
                 silence_duration = float(shot.get("silence_duration", 0) or 0)
                 if silence_duration > 0:
@@ -103,7 +108,7 @@ class AudioDirector:
             if music_duration >= 2.0 and str(scene.get("music_mood", "subtle tension")).lower() not in {"none", "silence"}:
                 scene_events.append(self._event("music", scene_id, "score", music_start, music_duration, "licensed_music_required", -24, 0, "music", emotion="restrained", era=era))
             events.extend(scene_events)
-            scene_cursor += duration
+            scene_cursor = round(scene_cursor + duration, 3)
 
         events.sort(key=lambda event: (event.start_time, -event.priority, event.audio_id))
         unresolved = sorted({event.source for event in events if not event.asset_available})

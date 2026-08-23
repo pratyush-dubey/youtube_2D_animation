@@ -1,0 +1,21 @@
+{
+  "passed": true,
+  "reference_face": [
+    226,
+    19,
+    260,
+    260
+  ],
+  "candidate_face": [
+    370,
+    82,
+    192,
+    192
+  ],
+  "reference_keypoints": 824,
+  "candidate_keypoints": 873,
+  "good_feature_matches": 151,
+  "feature_match_ratio": 0.1833,
+  "method": "Haar upper-frame face localization plus ORB ratio-test matches",
+  "limitation": "This rejects obvious drift but is not biometric identification or proof of identity."
+}

@@ -87,8 +87,9 @@ class LLMProvider(ABC):
                     logger.info("llm_retrying", wait_s=round(sleep_time, 1), attempt=attempt)
                     time.sleep(sleep_time)
 
+        detail = " ".join(str(last_exc).split())[:2000]
         raise RuntimeError(
-            f"LLM provider {self.provider_name!r} failed after {max_retries} attempts"
+            f"LLM provider {self.provider_name!r} failed after {max_retries} attempts: {detail}"
         ) from last_exc
 
     @staticmethod
@@ -112,12 +113,16 @@ class LLMProvider(ABC):
         Returns:
             (parsed_dict, last_llm_response) — callers use the response for token/cost tracking.
         """
-        max_retries = settings.llm_max_retries
+        # This is the total request budget. Do not multiply JSON-repair retries
+        # by the provider's own retry loop.
+        max_retries = kwargs.pop("max_retries", settings.llm_max_retries)
         last_raw = ""
         last_response: LLMResponse | None = None
         current_prompt = prompt
         for attempt in range(1, max_retries + 1):
-            last_response = self.generate(current_prompt, **kwargs)
+            last_response = self.generate(
+                current_prompt, max_retries=1, json_mode=True, **kwargs
+            )
             last_raw = last_response.content.strip()
             parsed = _extract_json(last_raw)
             if parsed is not None:

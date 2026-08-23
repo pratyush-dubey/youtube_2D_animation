@@ -69,7 +69,10 @@ class ScriptGenerator:
         existing = self._load_existing()
         if existing is not None:
             logger.info("script_loaded_from_db", project=self.project_id)
-            return existing
+            return _fit_duration(
+                existing, target_duration_seconds,
+                int(settings.words_per_minute * target_duration_seconds / 60),
+            )
 
         target_minutes = round(target_duration_seconds / 60, 1)
         target_words = int(settings.words_per_minute * target_minutes)
@@ -84,6 +87,7 @@ class ScriptGenerator:
             .replace("{style}", style)
             .replace("{target_duration_minutes}", str(target_minutes))
             .replace("{target_words}", str(target_words))
+            .replace("{target_duration_seconds}", str(target_duration_seconds))
             .replace("{research_json}", research_json_str)
         )
 
@@ -91,7 +95,8 @@ class ScriptGenerator:
             prompt,
             schema_hint="ScriptResult",
             temperature=0.7,
-            max_tokens=settings.llm_max_tokens,
+            max_tokens=min(settings.llm_max_tokens, max(700, target_words * 4)),
+            max_retries=3,
         )
 
         # Record cost from the same call — no second LLM request needed
@@ -103,7 +108,10 @@ class ScriptGenerator:
             output_tokens=response.output_tokens,
         )
 
-        result = _align_numbered_title(ScriptResult.model_validate(raw))
+        result = _fit_duration(
+            _align_numbered_title(ScriptResult.model_validate(raw)),
+            target_duration_seconds, target_words,
+        )
         self._save(result)
 
         logger.info(
@@ -172,3 +180,63 @@ def _align_numbered_title(result: ScriptResult) -> ScriptResult:
     title = f"{match.group(1)}{actual}{match.group(3)}"
     logger.warning("numbered_title_aligned", promised=promised, actual=actual, title=title)
     return result.model_copy(update={"title": title})
+
+
+def _fit_duration(
+    result: ScriptResult, target_duration_seconds: int, target_words: int,
+) -> ScriptResult:
+    """Bound generated and cached narration to the requested spoken duration."""
+    target_words = max(int(target_words), 30)
+    sections = list(result.sections)
+    fields: list[tuple[str, str]] = [("hook", result.hook)]
+    fields.extend(("section", section.narration) for section in sections)
+    fields.extend([
+        ("conclusion", result.conclusion),
+        ("call_to_action", result.call_to_action),
+    ])
+    available = [str(text or "").split() for _, text in fields]
+    total_available = sum(len(words) for words in available)
+    if total_available <= target_words:
+        return result.model_copy(update={
+            "word_count": total_available,
+            "estimated_duration_seconds": max(1, round(total_available * 60 / settings.words_per_minute)),
+        })
+
+    minimums = [min(len(words), 8 if kind == "section" else 5) for (kind, _), words in zip(fields, available)]
+    remaining = max(target_words - sum(minimums), 0)
+    extras = [max(len(words) - minimum, 0) for words, minimum in zip(available, minimums)]
+    extra_total = sum(extras) or 1
+    budgets = [minimum + int(remaining * extra / extra_total) for minimum, extra in zip(minimums, extras)]
+    while sum(budgets) < target_words:
+        index = max(range(len(budgets)), key=lambda i: len(available[i]) - budgets[i])
+        if budgets[index] >= len(available[index]):
+            break
+        budgets[index] += 1
+
+    trimmed: list[str] = []
+    for words, budget in zip(available, budgets):
+        text = " ".join(words[:budget]).strip()
+        if text and text[-1] not in ".!?":
+            text += "."
+        trimmed.append(text)
+    section_values = [
+        section.model_copy(update={"narration": trimmed[index + 1]})
+        for index, section in enumerate(sections)
+    ]
+    section_word_total = sum(len(section.narration.split()) for section in section_values) or 1
+    section_values = [
+        section.model_copy(update={
+            "duration_seconds": max(
+                1.0,
+                target_duration_seconds * len(section.narration.split()) / section_word_total,
+            )
+        })
+        for section in section_values
+    ]
+    actual_words = sum(len(text.split()) for text in trimmed)
+    return result.model_copy(update={
+        "hook": trimmed[0], "sections": section_values,
+        "conclusion": trimmed[-2], "call_to_action": trimmed[-1],
+        "word_count": actual_words,
+        "estimated_duration_seconds": int(target_duration_seconds),
+    })

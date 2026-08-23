@@ -17,6 +17,7 @@ class AudioDirectorAgent(Agent):
             output_dir=context.output_dir,
             language=context.language,
             characters=context.character_sheet,
+            narration_alignment=context.narration_alignment,
         )
         context.audio_plan = plan
         context.character_voice_map = plan["character_voice_map"]

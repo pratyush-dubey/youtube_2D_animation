@@ -88,7 +88,10 @@ class GeminiProvider(LLMProvider):
         # Disable automatic function calling (AFC) to suppress SDK warnings
         client = genai.Client(
             api_key=self.api_key,
-            http_options=types.HttpOptions(api_version="v1beta"),
+            http_options=types.HttpOptions(
+                api_version="v1beta",
+                timeout=settings.llm_request_timeout_seconds * 1000,
+            ),
         )
 
         # The new SDK requires the "models/" prefix; add it if missing

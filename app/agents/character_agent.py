@@ -63,6 +63,7 @@ class CharacterAgent(Agent):
                     data = _normalise_character_bible(
                         _attach_references(data, context.output_dir, people_list)
                     )
+                    data = _illustrate_characters(data, context.output_dir, context.style)
                     cache_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
                     _write_reference_attribution(context.output_dir, data)
                     context.character_sheet = data
@@ -97,11 +98,17 @@ class CharacterAgent(Agent):
         )
 
         try:
+            # A local text model adds several minutes here but does not create
+            # the reference asset.  Build the identity-locked metadata
+            # deterministically and let the reference lookup do the useful work.
+            if self.llm.provider_name == "ollama":
+                raise _UseDeterministicCharacterSheet()
             raw, response = self.llm.generate_json(
                 prompt,
                 schema_hint="CharacterSheet",
                 temperature=0.4,
-                max_tokens=2048,
+                max_tokens=700,
+                max_retries=2,
             )
             self.cost_tracker.record(
                 provider=self.llm.provider_name,
@@ -110,6 +117,8 @@ class CharacterAgent(Agent):
                 input_tokens=response.input_tokens,
                 output_tokens=response.output_tokens,
             )
+        except _UseDeterministicCharacterSheet:
+            raw = _fallback_character_sheet(topic, people_list)
         except Exception as exc:
             logger.warning("character_generation_fallback", error=str(exc))
             raw = _fallback_character_sheet(topic, people_list)
@@ -122,6 +131,7 @@ class CharacterAgent(Agent):
         sheet = _normalise_character_bible(
             _attach_references(sheet, context.output_dir, people_list)
         )
+        sheet = _illustrate_characters(sheet, context.output_dir, context.style)
 
         cache_path.write_text(json.dumps(sheet, indent=2), encoding="utf-8")
         _write_reference_attribution(context.output_dir, sheet)
@@ -134,6 +144,10 @@ class CharacterAgent(Agent):
             settings_count=len(sheet["settings"]),
         )
         return sheet
+
+
+class _UseDeterministicCharacterSheet(Exception):
+    """Internal control flow for the reliable zero-cost character path."""
 
 
 def _fallback_character_sheet(topic: str, people: list[str]) -> dict:
@@ -204,6 +218,28 @@ def _normalise_character_bible(sheet: dict) -> dict:
         "characters": characters,
         "settings": sheet.get("settings", []),
     }
+
+
+def _illustrate_characters(sheet: dict, output_dir: Path, style: str) -> dict:
+    """Generate a riggable illustration per character (see character_illustration.py).
+
+    Best-effort: a provider outage or generation failure for one character
+    leaves that entry unchanged (no rig_manifest) rather than failing the
+    whole character stage; the renderer already handles a missing rig by
+    raising at render time with a clear error instead of silently degrading.
+    """
+    from app.images.character_illustration import illustrate_character
+
+    characters = []
+    for raw in sheet.get("characters", []):
+        entry = dict(raw) if isinstance(raw, dict) else raw
+        if isinstance(entry, dict) and entry.get("name"):
+            try:
+                entry = illustrate_character(entry, output_dir, style)
+            except Exception as exc:
+                logger.warning("character_illustration_error", character=entry.get("name"), error=str(exc)[:300])
+        characters.append(entry)
+    return {**sheet, "characters": characters}
 
 
 def _attach_references(sheet: dict, output_dir: Path, people: list[str]) -> dict:

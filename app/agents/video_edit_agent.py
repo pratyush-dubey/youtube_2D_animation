@@ -85,11 +85,18 @@ class VideoEditAgent(Agent):
         # Build individual scene clips
         scene_clips: list[Path] = []
         rendered_scenes: list[dict] = []
+        self.rendered_audio_cues: list[dict] = []
         for scene in context.storyboard:
             clip = self._build_scene_clip(scene, context)
             if clip and clip.exists():
                 scene_clips.append(clip)
                 rendered_scenes.append(scene)
+
+        audio_dir = output_dir / "audio"
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        (audio_dir / "audio_cues.json").write_text(
+            json.dumps(self.rendered_audio_cues, indent=2), encoding="utf-8"
+        )
 
         if not scene_clips:
             raise RuntimeError("No scene clips were generated")
@@ -141,7 +148,7 @@ class VideoEditAgent(Agent):
 
         context.video_path = final_mp4
         render_manifest.write_text(
-            json.dumps({"render_key": render_key, "version": 8}, indent=2),
+            json.dumps({"render_key": render_key, "version": 10}, indent=2),
             encoding="utf-8",
         )
         logger.info(
@@ -161,11 +168,16 @@ class VideoEditAgent(Agent):
         out = context.output_dir / "scenes" / f"scene_{scene_id:03d}.mp4"
         out.parent.mkdir(parents=True, exist_ok=True)
 
-        # Determine duration from audio if available
-        duration = scene.get("duration_seconds", 8.0)
-        if audio_path and audio_path.exists():
+        # The storyboard owns the requested pacing. Narration may extend a
+        # scene, but a fast TTS voice must not collapse a planned production.
+        duration = float(scene.get("duration_seconds", 8.0))
+        if audio_path and audio_path.exists() and not context.master_timeline:
             try:
-                duration = max(_probe_duration(audio_path) + float(settings.scene_padding_seconds), 3.0)
+                duration = max(
+                    duration,
+                    _probe_duration(audio_path) + float(settings.scene_padding_seconds),
+                    3.0,
+                )
             except Exception:
                 pass
 
@@ -227,6 +239,18 @@ class VideoEditAgent(Agent):
         if len(clips) == 1:
             shutil.copy2(clips[0], output)
             return []
+
+        exact_master_clock = all(
+            scene.get("shots") and scene["shots"][0].get("master_start") is not None
+            for scene in scenes
+        )
+        if exact_master_clock:
+            list_file = output.parent / "concat_list.txt"
+            list_file.write_text(
+                "".join(f"file '{clip.resolve()}'\n" for clip in clips), encoding="utf-8"
+            )
+            _ffmpeg("-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", str(output))
+            return [0.0] * (len(clips) - 1)
 
         durations = [_probe_duration(p) for p in clips]
         overlaps = [min(0.45, durations[i] / 4, durations[i + 1] / 4)
@@ -429,6 +453,30 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         )
 
     def _create_sfx(self, output_dir: Path, scene: dict) -> Path | None:
+        timed = [event for event in scene.get("sfx_events") or [] if str(event.get("source", "")).lower() in _SFX_FILTERS]
+        if timed:
+            from pydub import AudioSegment
+            duration_ms = round(float(scene.get("duration_seconds", 1.0)) * 1000)
+            combined = AudioSegment.silent(duration=duration_ms, frame_rate=48000)
+            cache_dir = output_dir / "audio" / "sfx" / "library"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            for event in timed:
+                cue = str(event["source"]).lower()
+                source_path = cache_dir / f"{cue}.wav"
+                if not source_path.is_file() or source_path.stat().st_size < 500:
+                    _ffmpeg("-f", "lavfi", "-i", _SFX_FILTERS[cue], "-ar", "48000", str(source_path))
+                local_ms = max(0, round(float(event["local_start"]) * 1000))
+                effect_ms = max(100, round((float(event["end"]) - float(event["start"])) * 1000))
+                effect = AudioSegment.from_file(source_path)[:effect_ms]
+                combined = combined.overlay(effect, position=local_ms)
+                self.rendered_audio_cues.append({
+                    "event_id": event["event_id"], "source": cue,
+                    "start": event["start"], "end": event["end"],
+                })
+            path = output_dir / "audio" / "sfx" / f"scene_{int(scene['scene_id']):03d}.wav"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            combined.export(path, format="wav", parameters=["-acodec", "pcm_s16le"])
+            return path
         cues = scene.get("sfx") or []
         cue = next((str(c).lower() for c in cues if str(c).lower() in _SFX_FILTERS), None)
         if cue is None:
@@ -483,13 +531,16 @@ _SFX_FILTERS = {
         r"0.72*sin(2*PI*(78+22*exp(-mod(t\,0.62)*18))*t)*exp(-mod(t\,0.62)*34)\,0)':"
         "s=48000:d=6.75,lowpass=f=430,volume=0.42"
     ),
+    "door": "sine=frequency=210:duration=1.2,afade=t=in:d=0.10,afade=t=out:st=0.35:d=0.80,volume=0.30",
+    "street_ambience": "anoisesrc=color=pink:duration=8,lowpass=f=1200,volume=0.05",
 }
 
 
 def _render_key(context: AgentContext) -> str:
     payload: dict[str, Any] = {
-        "version": 8,
+        "version": 10,
         "storyboard": context.storyboard,
+        "master_timeline": context.master_timeline,
         "fps": FPS,
         "size": list(_video_dimensions(context.aspect_ratio)),
         "video_codec": settings.video_codec,

@@ -1,0 +1,22 @@
+{
+  "character_id": "muthappa_rai",
+  "display_name": "Muthappa Rai",
+  "role": "documentary subject",
+  "face_markers": [
+    "broad square jaw",
+    "black aviator-style sunglasses",
+    "thick moustache",
+    "grey-and-black goatee",
+    "swept-back dark hair with grey at the sides"
+  ],
+  "wardrobe": "black pinstripe suit with an open-collar white shirt",
+  "body": "adult male, medium-heavy build",
+  "required_rig_actions": [
+    "walk",
+    "stop",
+    "look_around",
+    "open_door",
+    "enter_room"
+  ],
+  "status": "reference_sourced_full_body_pending_qa"
+}

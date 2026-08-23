@@ -4,13 +4,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
+import structlog
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field, field_validator
-import structlog
 
 from app.characters.web_jobs import character_studio_jobs
-
 
 router = APIRouter(tags=["character-studio"])
 logger = structlog.get_logger(__name__)
@@ -76,7 +75,18 @@ def latest_character_job():
 def character_job(job_id: str):
     job = character_studio_jobs.get(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+        # Character Studio jobs are intentionally in-memory. Browser tabs may
+        # retain an old id across a backend restart; return a terminal state so
+        # those tabs stop polling instead of producing endless 404 log noise.
+        return {
+            "id": job_id,
+            "status": "expired",
+            "message": "This Character Studio job expired when the backend restarted.",
+            "percent": 100,
+            "stages": [],
+            "images": [],
+            "error": "Start a new character generation if this asset is still needed.",
+        }
     return job
 
 

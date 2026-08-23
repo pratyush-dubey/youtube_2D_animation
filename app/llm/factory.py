@@ -33,8 +33,15 @@ def get_llm_provider(override: str | None = None) -> LLMProvider:
         return OpenAIProvider()
 
     if provider_name == "gemini":
+        from app.llm.fallback_provider import FallbackLLMProvider
         from app.llm.gemini_provider import GeminiProvider
-        return GeminiProvider()
+        from app.llm.ollama_provider import OllamaProvider
+        return FallbackLLMProvider(
+            primary_factory=GeminiProvider,
+            fallback_factory=OllamaProvider,
+            primary_name="gemini",
+            fallback_name="ollama",
+        )
 
     raise ValueError(
         f"Unknown LLM provider: {provider_name!r}. "

@@ -1,0 +1,41 @@
+{
+  "selected_id": 1,
+  "candidates": [
+    {
+      "id": 1,
+      "main_text": "MUTHAPPA RAI",
+      "sub_text": "BENGALURU STORY",
+      "background_color": "#07141a",
+      "background_color_2": "#1a2d31",
+      "text_color": "#ffffff",
+      "accent_color": "#d99a43",
+      "score": 100,
+      "background_image": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\bengaluru_street.png",
+      "focal_image": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\character_cutout.png"
+    },
+    {
+      "id": 2,
+      "main_text": "THE RAI YEARS",
+      "sub_text": "1980s BENGALURU",
+      "background_color": "#101820",
+      "background_color_2": "#27343a",
+      "text_color": "#ffffff",
+      "accent_color": "#d99a43",
+      "score": 90,
+      "background_image": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\bengaluru_street.png",
+      "focal_image": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\character_cutout.png"
+    },
+    {
+      "id": 3,
+      "main_text": "BENGALURU FILES",
+      "sub_text": "MUTHAPPA RAI",
+      "background_color": "#151515",
+      "background_color_2": "#303030",
+      "text_color": "#ffffff",
+      "accent_color": "#c98b3a",
+      "score": 88,
+      "background_image": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\bengaluru_street.png",
+      "focal_image": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\character_cutout.png"
+    }
+  ]
+}

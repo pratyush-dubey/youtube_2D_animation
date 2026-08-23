@@ -1,0 +1,225 @@
+{
+  "rig_version": 2,
+  "canvas_size": [
+    952,
+    1653
+  ],
+  "source_bbox": [
+    193,
+    40,
+    745,
+    1609
+  ],
+  "parts": {
+    "head": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\rig\\head.png",
+      "position": [
+        272,
+        40
+      ],
+      "size": [
+        449,
+        370
+      ],
+      "pivot": [
+        0.5,
+        0.92
+      ]
+    },
+    "torso": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\rig\\torso.png",
+      "position": [
+        380,
+        408
+      ],
+      "size": [
+        201,
+        559
+      ],
+      "pivot": [
+        0.5,
+        0.3
+      ]
+    },
+    "left_upper_arm": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\rig\\left_upper_arm.png",
+      "position": [
+        220,
+        408
+      ],
+      "size": [
+        162,
+        261
+      ],
+      "pivot": [
+        0.86,
+        0.1
+      ]
+    },
+    "left_lower_arm": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\rig\\left_lower_arm.png",
+      "position": [
+        193,
+        667
+      ],
+      "size": [
+        189,
+        222
+      ],
+      "pivot": [
+        0.6,
+        0.08
+      ]
+    },
+    "left_hand": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\rig\\left_hand.png",
+      "position": [
+        200,
+        887
+      ],
+      "size": [
+        182,
+        80
+      ],
+      "pivot": [
+        0.55,
+        0.08
+      ]
+    },
+    "right_upper_arm": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\rig\\right_upper_arm.png",
+      "position": [
+        579,
+        408
+      ],
+      "size": [
+        166,
+        261
+      ],
+      "pivot": [
+        0.14,
+        0.1
+      ]
+    },
+    "right_lower_arm": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\rig\\right_lower_arm.png",
+      "position": [
+        579,
+        667
+      ],
+      "size": [
+        164,
+        222
+      ],
+      "pivot": [
+        0.4,
+        0.08
+      ]
+    },
+    "right_hand": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\rig\\right_hand.png",
+      "position": [
+        579,
+        887
+      ],
+      "size": [
+        123,
+        80
+      ],
+      "pivot": [
+        0.45,
+        0.08
+      ]
+    },
+    "left_upper_leg": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\rig\\left_upper_leg.png",
+      "position": [
+        302,
+        965
+      ],
+      "size": [
+        180,
+        269
+      ],
+      "pivot": [
+        0.7,
+        0.06
+      ]
+    },
+    "left_lower_leg": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\rig\\left_lower_leg.png",
+      "position": [
+        298,
+        1232
+      ],
+      "size": [
+        139,
+        222
+      ],
+      "pivot": [
+        0.58,
+        0.06
+      ]
+    },
+    "left_foot": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\rig\\left_foot.png",
+      "position": [
+        205,
+        1452
+      ],
+      "size": [
+        213,
+        114
+      ],
+      "pivot": [
+        0.55,
+        0.08
+      ]
+    },
+    "right_upper_leg": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\rig\\right_upper_leg.png",
+      "position": [
+        480,
+        965
+      ],
+      "size": [
+        184,
+        269
+      ],
+      "pivot": [
+        0.3,
+        0.06
+      ]
+    },
+    "right_lower_leg": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\rig\\right_lower_leg.png",
+      "position": [
+        523,
+        1232
+      ],
+      "size": [
+        152,
+        222
+      ],
+      "pivot": [
+        0.42,
+        0.06
+      ]
+    },
+    "right_foot": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\rig\\right_foot.png",
+      "position": [
+        546,
+        1452
+      ],
+      "size": [
+        134,
+        157
+      ],
+      "pivot": [
+        0.45,
+        0.08
+      ]
+    }
+  }
+}

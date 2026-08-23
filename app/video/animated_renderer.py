@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 
 from app.config.settings import settings
 from app.characters.errors import CharacterGenerationError, DIFFUSION_FAILURE
+from app.video.blocking import character_blocking
 
 QUALITY_PROFILES = {
     "DRAFT": (640, 360, 15),
@@ -103,7 +104,7 @@ class Cinematic2DRenderer:
         audio_map = "[narr]"
         if has_sfx:
             filters.extend([
-                "[2:a]adelay=250|250,volume=0.58[sfx]",
+                "[2:a]volume=0.58[sfx]",
                 "[narr][sfx]amix=inputs=2:duration=first:dropout_transition=0[aout]",
             ])
             audio_map = "[aout]"
@@ -133,6 +134,7 @@ class _World:
         self.environment_kind = _environment_kind(scene)
         self.visual_quality = str(scene.get("visual_quality", "PRODUCTION")).upper()
         self.environment_layers = _load_art_layers(scene.get("environment_assets") or {}, width, height)
+        self.environment_actors = _load_actor_layers(scene.get("environment_actors") or {}, width, height)
         self.character_rig = None
         rig_manifest = scene.get("character_rig_manifest")
         if rig_manifest and Path(str(rig_manifest)).exists():
@@ -162,12 +164,52 @@ class _World:
         self._midground_layer(draw, t, camera)
         self._light_layer(frame, t, shot)
         self._ground_layer(draw, t, camera)
+        self._environment_actors(frame, t, duration, camera)
+        self._interaction_layer(frame, shot, local)
         self._character_layer(frame, draw, t, duration, shot, local)
         self._composite_art_layer(frame, "foreground", t, camera, 0.82)
         self._foreground_layer(draw, t, camera)
         self._atmosphere(frame, t)
         self._grade(frame, shot, t, duration)
         return frame
+
+    def _environment_actors(self, frame: Image.Image, t: float, duration: float, camera: dict) -> None:
+        """Move discrete painted environment elements independently of camera."""
+        taxi = self.environment_actors.get("vehicle")
+        if taxi is not None:
+            travel = ((t / max(duration, .01)) * 1.55 - .34) * self.width
+            x = round(travel - camera["x"] * .48)
+            y = round(self.height * .67)
+            # Small suspension motion is tied to wheel cadence, not camera.
+            y += round(math.sin(t * 8.2) * self.height * .0025)
+            frame.alpha_composite(taxi, (x, y))
+
+    def _interaction_layer(self, frame: Image.Image, shot: dict, local: float) -> None:
+        """Animate real pixels from a declared prop region (for example a door)."""
+        if str(shot.get("action")) not in {"open_door", "close_door"}:
+            return
+        raw = (self.scene.get("interactive_regions") or {}).get("door")
+        if not isinstance(raw, (list, tuple)) or len(raw) != 4:
+            return
+        x1, y1, x2, y2 = (
+            round(float(raw[0]) * self.width), round(float(raw[1]) * self.height),
+            round(float(raw[2]) * self.width), round(float(raw[3]) * self.height),
+        )
+        if x2 <= x1 or y2 <= y1:
+            return
+        panel = frame.crop((x1, y1, x2, y2)).convert("RGBA")
+        progress = _ease(min(1.0, max(0.0, local * 1.65)))
+        if str(shot.get("action")) == "close_door":
+            progress = 1.0 - progress
+        # Replace the closed panel with a shaded interior, then foreshorten the
+        # source-painted panel around its left hinge. No synthetic door is drawn.
+        interior = ImageEnhance.Brightness(panel).enhance(0.16)
+        frame.alpha_composite(interior, (x1, y1))
+        open_width = max(3, round(panel.width * (1.0 - progress * 0.82)))
+        moving_panel = panel.resize((open_width, panel.height), Image.Resampling.BICUBIC)
+        shade = Image.new("RGBA", moving_panel.size, (4, 10, 13, round(24 * progress)))
+        moving_panel = Image.alpha_composite(moving_panel, shade)
+        frame.alpha_composite(moving_panel, (x1, y1))
 
     def _distant_layer(self, draw: ImageDraw.ImageDraw, t: float, camera: dict) -> None:
         drift = camera["x"] * 0.12
@@ -286,27 +328,51 @@ class _World:
         frame.alpha_composite(overlay)
 
     def _character_layer(self, frame: Image.Image, draw: ImageDraw.ImageDraw, t: float, duration: float, shot: dict, local: float) -> None:
-        characters = shot.get("characters") or ([] if not self.scene.get("character_name") else [self.scene["character_name"]])
+        characters = (
+            shot.get("characters") or []
+            if "characters" in shot
+            else ([] if not self.scene.get("character_name") else [self.scene["character_name"]])
+        )
         if not characters:
             return
         shot_type = shot.get("shot_type", "medium")
         base_scale = {"wide": 0.36, "medium": 0.55, "closeup": 0.92, "insert": 0.46, "rear": 0.58, "over_shoulder": 0.72}.get(shot_type, 0.52)
         action = str(shot.get("action", "react"))
-        walking = action in {"walk", "walking", "run", "walk_across"} or "walk" in str(self.scene.get("character_motion", ""))
+        walking = action in {"walk", "walking", "run", "walk_across", "enter", "enter_room", "exit_room"} or "walk" in str(self.scene.get("character_motion", ""))
+        # Blocking (start/end screen position) is scene- and shot-specific so a
+        # walk never traces the same fixed path twice; see app/video/blocking.py.
+        blocking = shot.get("character_position") or character_blocking(action, shot_type, self.seed)
+        start_x = self.width * float(blocking.get("start_x", 0.56))
+        end_x = self.width * float(blocking.get("end_x", 0.56))
         if walking:
-            progress = min(1.0, max(0.0, t / max(duration * 0.58, 0.1)))
-            cx = self.width * (-0.05 + progress * 0.68)
+            progress = local
+            # Locomotion is allowed only alongside the gait below. A production
+            # walk never has a root-position-only rendering path.
+            cx = start_x + (end_x - start_x) * _ease(progress)
+        elif action == "stop":
+            # A short ease-out makes the deceleration readable, followed by a
+            # held final position; camera movement is measured separately.
+            stop_progress = 1.0 - (1.0 - min(local * 1.8, 1.0)) ** 3
+            cx = start_x + (end_x - start_x) * stop_progress
         else:
-            cx = self.width * (0.58 + 0.015 * math.sin(t * 0.7))
+            cx = (start_x + end_x) / 2.0 + self.width * 0.015 * math.sin(t * 0.7)
+        if action in {"open_door", "close_door", "interact"}:
+            cx = self.width * 0.64
         if shot_type == "closeup":
-            cx = self.width * 0.53
+            cx = (start_x + end_x) / 2.0
         phase = t * (9.5 if "run" in action else 6.0)
         expression = str(shot.get("expression", "neutral"))
         envelope_index = min(int(t * self.render_fps), max(len(self.audio_envelope) - 1, 0))
         mouth_open = self.audio_envelope[envelope_index] if self.audio_envelope else 0.0
         if self.character_rig is not None:
             closeup = shot_type == "closeup"
-            illustrated_height = round(self.height * (0.99 if closeup else base_scale * 1.55))
+            illustrated_height = round(self.height * (1.65 if closeup else base_scale * 1.72))
+            if walking:
+                shot_seconds = max(float(shot.get("duration", duration)), .01)
+                travel_pixels = self.width * .48
+                stride_pixels = max(28.0, illustrated_height * .31)
+                cycles = max(1.0, travel_pixels / stride_pixels)
+                phase = local * math.tau * cycles
             actor = self.character_rig.render(
                 illustrated_height,
                 phase=phase,
@@ -315,9 +381,9 @@ class _World:
                 head_turn=(local if action in {"turn_head", "look_around", "react", "stop"} else 0.0),
                 breathing=1.0 + 0.012 * math.sin(t * 3.0),
                 closeup=closeup,
+                progress=local,
+                mouth_open=mouth_open,
             )
-            if closeup:
-                cx = self.width * 0.58
             shadow = Image.new("RGBA", frame.size, (0, 0, 0, 0))
             shadow_draw = ImageDraw.Draw(shadow, "RGBA")
             shadow_width = actor.width * (0.27 if closeup else 0.34)
@@ -328,7 +394,7 @@ class _World:
             shadow = shadow.filter(ImageFilter.GaussianBlur(max(5, self.width // 110)))
             frame.alpha_composite(shadow)
             actor_x = round(cx - actor.width / 2)
-            actor_y = round(self.height * (0.95 if not closeup else 1.02) - actor.height)
+            actor_y = round(self.height * 0.05) if closeup else round(self.height * 0.95 - actor.height)
             # Foreground haze partially veils the lower body and visually seats
             # the painted character inside the environment.
             frame.alpha_composite(actor, (actor_x, actor_y))
@@ -376,7 +442,7 @@ class _World:
         bar = max(0, int(self.height * 0.035))
         draw.rectangle((0, 0, self.width, bar), fill=(0, 0, 0, 235))
         draw.rectangle((0, self.height - bar, self.width, self.height), fill=(0, 0, 0, 235))
-        if t > duration - 0.38:
+        if bool(self.scene.get("fade_out")) and t > duration - 0.38:
             fade = min(1.0, (t - (duration - 0.38)) / 0.38)
             draw.rectangle((0, 0, self.width, self.height), fill=(0, 0, 0, round(255 * _ease(fade))))
 
@@ -505,6 +571,24 @@ def _load_art_layers(raw: dict, width: int, height: int) -> dict[str, Image.Imag
             continue
         source = Image.open(path).convert("RGBA")
         layers[name] = ImageOps.fit(source, (width, height), Image.Resampling.LANCZOS)
+    return layers
+
+
+def _load_actor_layers(raw: dict, width: int, height: int) -> dict[str, Image.Image]:
+    """Load discrete painted environment actors (for example a passing vehicle).
+
+    Unlike full-frame art layers these keep their own aspect ratio and are
+    scaled relative to frame height instead of being cropped to fill it.
+    """
+    layers: dict[str, Image.Image] = {}
+    for name, value in raw.items():
+        path = Path(str(value))
+        if not path.exists():
+            continue
+        source = Image.open(path).convert("RGBA")
+        scale = (height * 0.12) / max(source.height, 1)
+        size = (max(1, round(source.width * scale)), max(1, round(source.height * scale)))
+        layers[name] = source.resize(size, Image.Resampling.LANCZOS)
     return layers
 
 

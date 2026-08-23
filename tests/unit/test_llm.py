@@ -92,12 +92,6 @@ class TestLLMProviderRetry:
 class TestFactory:
     def test_ollama_provider_returned(self, monkeypatch):
         monkeypatch.setenv("LLM_PROVIDER", "ollama")
-        # reload settings after env change
-        from importlib import reload
-        import app.config.settings as s_mod
-        reload(s_mod)
-        import app.llm.factory as f_mod
-        reload(f_mod)
         from app.llm.factory import get_llm_provider as gp
         from app.llm.ollama_provider import OllamaProvider
         provider = gp("ollama")

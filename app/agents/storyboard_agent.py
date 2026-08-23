@@ -5,6 +5,7 @@ with image prompts, camera motions, transitions, and SFX cues.
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 from pathlib import Path
 
@@ -38,7 +39,7 @@ def _load_prompt() -> str:
 
 class StoryboardAgent(Agent):
     name = "storyboard_agent"
-    max_retries = 2
+    max_retries = 0
 
     def __init__(self, llm=None) -> None:
         self.llm = llm or get_llm_provider()
@@ -56,11 +57,16 @@ class StoryboardAgent(Agent):
             try:
                 data = json.loads(storyboard_path.read_text(encoding="utf-8"))
                 scenes = data.get("scenes", [])
-                if scenes:
+                if (
+                    scenes
+                    and int(data.get("storyboard_version", 0)) >= 4
+                    and data.get("script_fingerprint") == _script_fingerprint(context.script)
+                ):
                     scenes = _prepare_scenes(scenes)
                     scenes = _ensure_script_sections(scenes, context.script, context.topic)
+                    scenes = _fit_storyboard_duration(scenes, context.target_duration_seconds)
                     context.storyboard = scenes
-                    _write_storyboard(storyboard_path, scenes)
+                    _write_storyboard(storyboard_path, scenes, context.script)
                     logger.info("storyboard_loaded_from_cache", project=context.project_id)
                     return scenes
             except Exception:
@@ -83,30 +89,45 @@ class StoryboardAgent(Agent):
             .replace("{script_json}", script.model_dump_json()[:5000])
         )
 
-        raw, response = self.llm.generate_json(
-            prompt,
-            schema_hint="Storyboard",
-            temperature=0.55,
-            max_tokens=settings.llm_max_tokens,
-        )
-        self.cost_tracker.record(
-            provider=self.llm.provider_name,
-            model=getattr(self.llm, "model", "unknown"),
-            operation="storyboard",
-            input_tokens=response.input_tokens,
-            output_tokens=response.output_tokens,
-        )
-
-        scenes = raw.get("scenes", [])
-        if not scenes:
-            # If raw itself is a list
-            scenes = raw if isinstance(raw, list) else []
+        if self.llm.provider_name == "ollama":
+            # Script sections already contain narration, titles and durations.
+            # Expanding them deterministically is both faster and more reliable
+            # than waiting minutes for a local text model to restate them.
+            scenes = _deterministic_storyboard(script, topic)
+            logger.info("storyboard_deterministic_local", project=context.project_id)
+        else:
+            try:
+                raw, response = self.llm.generate_json(
+                    prompt,
+                    schema_hint="Storyboard",
+                    temperature=0.55,
+                    max_tokens=min(
+                        settings.llm_max_tokens,
+                        max(700, context.target_duration_seconds * 12),
+                    ),
+                    max_retries=2,
+                )
+                self.cost_tracker.record(
+                    provider=self.llm.provider_name,
+                    model=getattr(self.llm, "model", "unknown"),
+                    operation="storyboard",
+                    input_tokens=response.input_tokens,
+                    output_tokens=response.output_tokens,
+                )
+                scenes = raw.get("scenes", [])
+                if not scenes:
+                    scenes = raw if isinstance(raw, list) else []
+            except Exception as exc:
+                context.warnings.append(f"Storyboard LLM unavailable; used script sections: {exc}")
+                logger.warning("storyboard_generation_fallback", error=str(exc))
+                scenes = []
 
         # Validate and normalise each scene
         scenes = _prepare_scenes(scenes)
         scenes = _ensure_script_sections(scenes, script, topic)
+        scenes = _fit_storyboard_duration(scenes, context.target_duration_seconds)
 
-        _write_storyboard(storyboard_path, scenes)
+        _write_storyboard(storyboard_path, scenes, script)
         context.storyboard = scenes
         logger.info("storyboard_complete", project=context.project_id, scenes=len(scenes))
         return scenes
@@ -244,11 +265,16 @@ _SHOT_TYPES = (
 )
 
 
-def _write_storyboard(path: Path, scenes: list[dict]) -> None:
+def _script_fingerprint(script: ScriptResult) -> str:
+    return hashlib.sha256(script.model_dump_json().encode("utf-8")).hexdigest()[:16]
+
+
+def _write_storyboard(path: Path, scenes: list[dict], script: ScriptResult) -> None:
     path.write_text(
         json.dumps(
             {
-                "storyboard_version": 3,
+                "storyboard_version": 4,
+                "script_fingerprint": _script_fingerprint(script),
                 "total_scenes": len(scenes),
                 "total_duration_seconds": round(
                     sum(float(s.get("duration_seconds", 0)) for s in scenes), 2
@@ -259,6 +285,72 @@ def _write_storyboard(path: Path, scenes: list[dict]) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def _deterministic_storyboard(script: ScriptResult, topic: str) -> list[dict]:
+    """Turn every spoken script field into an explicit visual scene."""
+    segments: list[tuple[str, str]] = [("Hook", script.hook)]
+    segments.extend((section.title, section.narration) for section in script.sections)
+    segments.extend([
+        ("Conclusion", script.conclusion),
+        ("Call to action", script.call_to_action),
+    ])
+    result = []
+    for index, (title, narration) in enumerate(segments, 1):
+        narration = str(narration or "").strip()
+        if not narration:
+            continue
+        result.append({
+            "scene_id": index,
+            "duration_seconds": max(3.0, len(narration.split()) * 60 / settings.words_per_minute),
+            "narration": narration,
+            "visual_description": f"Accurate cinematic editorial visual for {topic}: {title}.",
+            "image_prompt": (
+                f"{topic}, {title}. Visualize this narration faithfully: {narration}. "
+                "Cinematic layered 2D documentary illustration, no written text."
+            ),
+            "animation_type": _MOTION_CYCLE[(index - 1) % len(_MOTION_CYCLE)],
+            "camera_motion": "slow-zoom-in",
+            "text_overlay": title if title not in {"Hook", "Conclusion", "Call to action"} else None,
+            "transition": "dissolve" if index > 1 else "cut",
+            "music_mood": "serious",
+            "sfx": [],
+        })
+    return result
+
+
+def _fit_storyboard_duration(scenes: list[dict], target_seconds: int) -> list[dict]:
+    """Make visual beats add up to the requested runtime without long stills."""
+    if not scenes:
+        return scenes
+    target = max(float(target_seconds), len(scenes) * 3.0)
+    weights = [max(len(str(scene.get("narration", "")).split()), 1) for scene in scenes]
+    durations = [target * weight / sum(weights) for weight in weights]
+    durations = [min(8.0, max(3.0, value)) for value in durations]
+    for _ in range(20):
+        difference = target - sum(durations)
+        if abs(difference) < 0.01:
+            break
+        eligible = [
+            index for index, value in enumerate(durations)
+            if (difference > 0 and value < 8.0) or (difference < 0 and value > 3.0)
+        ]
+        if not eligible:
+            break
+        share = difference / len(eligible)
+        for index in eligible:
+            durations[index] = min(8.0, max(3.0, durations[index] + share))
+    for index, scene in enumerate(scenes):
+        scene["duration_seconds"] = round(durations[index], 2)
+    # Absorb rounding drift in a scene that remains within the safe range.
+    drift = round(target - sum(float(s["duration_seconds"]) for s in scenes), 2)
+    if drift:
+        for scene in scenes:
+            adjusted = float(scene["duration_seconds"]) + drift
+            if 3.0 <= adjusted <= 8.0:
+                scene["duration_seconds"] = round(adjusted, 2)
+                break
+    return scenes
 
 
 def _prepare_scenes(raw_scenes: list[dict]) -> list[dict]:

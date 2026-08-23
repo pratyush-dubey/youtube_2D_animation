@@ -38,6 +38,8 @@ class OllamaProvider(LLMProvider):
                 "num_predict": max_tokens,
             },
         }
+        if kwargs.get("json_mode"):
+            payload["format"] = "json"
 
         resp = requests.post(
             f"{self.base_url}/api/generate",

@@ -248,8 +248,8 @@ class TestFullPipelinePhase1:
 
         assert result.title == "How Black Holes Work: The Most Extreme Objects in the Universe"
         assert len(result.sections) == 5
-        assert result.estimated_duration_seconds == 480
-        assert result.word_count == 1040
+        assert result.estimated_duration_seconds == 124
+        assert result.word_count == 268
         assert result.hook.startswith("Imagine")
 
     def test_script_sections_persisted_as_scenes(self, tmp_path):
@@ -295,7 +295,7 @@ class TestFullPipelinePhase1:
         assert result.status == "complete"
         assert result.script_title == SCRIPT_JSON["title"]
         assert result.script_sections == 5
-        assert result.estimated_duration_seconds == 480
+        assert result.estimated_duration_seconds == 124
         # SEO/thumbnail are soft stages — they may fail without aborting the pipeline
         # so errors can contain non-fatal warnings
         fatal_errors = [e for e in result.errors if "(non-fatal)" not in e]

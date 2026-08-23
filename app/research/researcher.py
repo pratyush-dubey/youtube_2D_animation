@@ -102,7 +102,8 @@ class Researcher:
             prompt,
             schema_hint="ResearchResult",
             temperature=0.3,   # lower temperature for factual research
-            max_tokens=6000,   # research JSON can be large; increased from 3000
+            max_tokens=1200,
+            max_retries=3,
         )
 
         # Record cost from the same call — no second LLM request needed

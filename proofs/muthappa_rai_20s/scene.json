@@ -1,0 +1,359 @@
+{
+  "scene_id": 1,
+  "duration_seconds": 20.0,
+  "shots": [
+    {
+      "shot_id": "S001",
+      "start": 0.0,
+      "end": 4.429,
+      "duration": 4.429,
+      "narration_segment": {
+        "start": 0.0,
+        "end": 4.429,
+        "text": "In the late nineteen eighties, Bengaluru's streets carried a tense new rhythm.",
+        "audio_path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\audio\\narration\\segment_001.wav"
+      },
+      "dialogue_segment": null,
+      "characters": [],
+      "environment": "1980s Bengaluru bank street with moving traffic, pedestrians, and a shop fan",
+      "actions": [
+        "observe"
+      ],
+      "action": "observe",
+      "emotion": "serious",
+      "camera": {
+        "move": "slow_push",
+        "start": {
+          "zoom": 1.01
+        },
+        "end": {
+          "zoom": 1.06
+        }
+      },
+      "framing": "wide",
+      "sound_effects": [
+        "street_ambience"
+      ],
+      "music": "restrained_tension",
+      "transition": "cut",
+      "visual_type": "ai_reconstruction",
+      "still_image_shot": false,
+      "animation_plan": {
+        "character": {
+          "required": false,
+          "rig": "segmented_artwork_2d",
+          "motions": [],
+          "camera_motion_excluded_from_score": true
+        },
+        "environment": {
+          "required": true,
+          "motions": [
+            "traffic_pass",
+            "pedestrian_walk",
+            "shop_fan_rotate",
+            "light_flicker"
+          ]
+        },
+        "events": [
+          {
+            "at": 0.08,
+            "action": "observe"
+          }
+        ]
+      },
+      "shot_type": "wide",
+      "expression": "serious"
+    },
+    {
+      "shot_id": "S002",
+      "start": 4.429,
+      "end": 8.943,
+      "duration": 4.514,
+      "narration_segment": {
+        "start": 4.429,
+        "end": 8.943,
+        "text": "Muthappa Rai walks toward a bank entrance, moving with deliberate confidence.",
+        "audio_path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\audio\\narration\\segment_002.wav"
+      },
+      "dialogue_segment": null,
+      "characters": [
+        "muthappa_rai"
+      ],
+      "environment": "1980s Bengaluru bank street with moving traffic, pedestrians, and a shop fan",
+      "actions": [
+        "walk"
+      ],
+      "action": "walk",
+      "emotion": "serious",
+      "camera": {
+        "move": "track_character",
+        "start": {
+          "zoom": 1.01
+        },
+        "end": {
+          "zoom": 1.06
+        }
+      },
+      "framing": "medium",
+      "sound_effects": [
+        "footsteps",
+        "street_ambience"
+      ],
+      "music": "restrained_tension",
+      "transition": "dissolve",
+      "visual_type": "ai_reconstruction",
+      "still_image_shot": false,
+      "animation_plan": {
+        "character": {
+          "required": true,
+          "rig": "segmented_artwork_2d",
+          "motions": [
+            "walk"
+          ],
+          "camera_motion_excluded_from_score": true
+        },
+        "environment": {
+          "required": true,
+          "motions": [
+            "traffic_pass",
+            "pedestrian_walk",
+            "shop_fan_rotate",
+            "light_flicker"
+          ]
+        },
+        "events": [
+          {
+            "at": 0.08,
+            "action": "walk"
+          }
+        ]
+      },
+      "shot_type": "medium",
+      "expression": "serious"
+    },
+    {
+      "shot_id": "S003",
+      "start": 8.943,
+      "end": 12.383,
+      "duration": 3.44,
+      "narration_segment": {
+        "start": 8.943,
+        "end": 12.383,
+        "text": "At the curb, he stops as traffic passes behind him.",
+        "audio_path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\audio\\narration\\segment_003.wav"
+      },
+      "dialogue_segment": null,
+      "characters": [
+        "muthappa_rai"
+      ],
+      "environment": "1980s Bengaluru bank street with moving traffic, pedestrians, and a shop fan",
+      "actions": [
+        "stop"
+      ],
+      "action": "stop",
+      "emotion": "serious",
+      "camera": {
+        "move": "slow_push",
+        "start": {
+          "zoom": 1.01
+        },
+        "end": {
+          "zoom": 1.06
+        }
+      },
+      "framing": "closeup",
+      "sound_effects": [
+        "street_ambience"
+      ],
+      "music": "restrained_tension",
+      "transition": "dissolve",
+      "visual_type": "ai_reconstruction",
+      "still_image_shot": false,
+      "animation_plan": {
+        "character": {
+          "required": true,
+          "rig": "segmented_artwork_2d",
+          "motions": [
+            "stop"
+          ],
+          "camera_motion_excluded_from_score": true
+        },
+        "environment": {
+          "required": true,
+          "motions": [
+            "traffic_pass",
+            "pedestrian_walk",
+            "shop_fan_rotate",
+            "light_flicker"
+          ]
+        },
+        "events": [
+          {
+            "at": 0.08,
+            "action": "stop"
+          }
+        ]
+      },
+      "shot_type": "closeup",
+      "expression": "serious"
+    },
+    {
+      "shot_id": "S004",
+      "start": 12.383,
+      "end": 15.429,
+      "duration": 3.046,
+      "narration_segment": {
+        "start": 12.383,
+        "end": 15.429,
+        "text": "He looks around, checking both ends of the crowded street.",
+        "audio_path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\audio\\narration\\segment_004.wav"
+      },
+      "dialogue_segment": null,
+      "characters": [
+        "muthappa_rai"
+      ],
+      "environment": "1980s Bengaluru bank street with moving traffic, pedestrians, and a shop fan",
+      "actions": [
+        "look_around"
+      ],
+      "action": "look_around",
+      "emotion": "serious",
+      "camera": {
+        "move": "orbit_simulation",
+        "start": {
+          "zoom": 1.01
+        },
+        "end": {
+          "zoom": 1.06
+        }
+      },
+      "framing": "closeup",
+      "sound_effects": [
+        "street_ambience"
+      ],
+      "music": "restrained_tension",
+      "transition": "dissolve",
+      "visual_type": "ai_reconstruction",
+      "still_image_shot": false,
+      "animation_plan": {
+        "character": {
+          "required": true,
+          "rig": "segmented_artwork_2d",
+          "motions": [
+            "look_around"
+          ],
+          "camera_motion_excluded_from_score": true
+        },
+        "environment": {
+          "required": true,
+          "motions": [
+            "traffic_pass",
+            "pedestrian_walk",
+            "shop_fan_rotate",
+            "light_flicker"
+          ]
+        },
+        "events": [
+          {
+            "at": 0.08,
+            "action": "look_around"
+          }
+        ]
+      },
+      "shot_type": "closeup",
+      "expression": "serious"
+    },
+    {
+      "shot_id": "S005",
+      "start": 15.429,
+      "end": 20.0,
+      "duration": 4.571,
+      "narration_segment": {
+        "start": 15.429,
+        "end": 20.0,
+        "text": "Then he opens the bank door and enters, while the city continues outside.",
+        "audio_path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\audio\\narration\\segment_005.wav"
+      },
+      "dialogue_segment": null,
+      "characters": [
+        "muthappa_rai"
+      ],
+      "environment": "1980s Bengaluru bank street with moving traffic, pedestrians, and a shop fan",
+      "actions": [
+        "enter_room",
+        "open_door"
+      ],
+      "action": "open_door",
+      "emotion": "serious",
+      "camera": {
+        "move": "slow_push",
+        "start": {
+          "zoom": 1.01
+        },
+        "end": {
+          "zoom": 1.06
+        }
+      },
+      "framing": "wide",
+      "sound_effects": [
+        "footsteps",
+        "door",
+        "street_ambience"
+      ],
+      "music": "restrained_tension",
+      "transition": "dissolve",
+      "visual_type": "ai_reconstruction",
+      "still_image_shot": false,
+      "animation_plan": {
+        "character": {
+          "required": true,
+          "rig": "segmented_artwork_2d",
+          "motions": [
+            "enter_room",
+            "open_door"
+          ],
+          "camera_motion_excluded_from_score": true
+        },
+        "environment": {
+          "required": true,
+          "motions": [
+            "traffic_pass",
+            "pedestrian_walk",
+            "shop_fan_rotate",
+            "light_flicker"
+          ]
+        },
+        "events": [
+          {
+            "at": 0.08,
+            "action": "enter_room"
+          },
+          {
+            "at": 0.08,
+            "action": "open_door"
+          }
+        ]
+      },
+      "shot_type": "wide",
+      "expression": "serious"
+    }
+  ],
+  "character_name": "Muthappa Rai",
+  "character_rig_manifest": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\rig\\rig.json",
+  "environment_assets": {
+    "distant": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\environment_layers\\distant.png",
+    "midground": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\environment_layers\\midground.png",
+    "foreground": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\proofs\\muthappa_rai_20s\\assets\\environment_layers\\foreground.png"
+  },
+  "interactive_regions": {
+    "door": [
+      0.58,
+      0.36,
+      0.67,
+      0.8
+    ]
+  },
+  "visual_description": "1980s Bengaluru street outside a bank",
+  "visual_quality": "PRODUCTION",
+  "seed": 19851203
+}

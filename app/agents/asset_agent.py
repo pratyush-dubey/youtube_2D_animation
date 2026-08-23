@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 import urllib.request
 from dataclasses import asdict
 from pathlib import Path
@@ -26,15 +27,16 @@ import structlog
 
 from app.agents.base import Agent, AgentContext
 from app.config.settings import settings
+from app.image_generation.visual_stage import VisualStageLog, validate_image, write_failure_report
 
 logger = structlog.get_logger(__name__)
 
 
 class AssetAgent(Agent):
     name = "asset_agent"
-    max_retries = 1
+    max_retries = 0
 
-    def _execute(self, context: AgentContext) -> dict[int, Path]:
+    def _execute_legacy(self, context: AgentContext) -> dict[int, Path]:
         if not context.storyboard:
             raise ValueError("StoryboardAgent must run before AssetAgent")
 
@@ -134,6 +136,137 @@ class AssetAgent(Agent):
         )
         return generated
 
+    # Production implementation: truthful unit progress and durable failure
+    # artifacts while keeping the existing provider/compositing helpers intact.
+    def _execute(self, context: AgentContext) -> dict[int, Path]:
+        if not context.storyboard:
+            raise ValueError("StoryboardAgent must run before AssetAgent")
+        if settings.image_provider.lower() == "placeholder":
+            raise RuntimeError("Production visuals cannot use the placeholder image provider")
+
+        images_dir = context.output_dir / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
+        hash_manifest_path = images_dir / "manifest.json"
+        try:
+            hash_manifest = json.loads(hash_manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            hash_manifest = {}
+        audit = VisualStageLog(context.output_dir, context.project_id)
+        self._active_visual_trace = context.visual_trace
+        char_visuals = _build_char_lookup(context.character_sheet)
+        visual_manifest_path = context.output_dir / "visual_manifest.json"
+        visual_manifest = {
+            "project_id": context.project_id,
+            "provider": settings.image_provider.lower(),
+            "architecture": "environment_diffusion_plus_2d_2_5d_character_compositing",
+            "reference_conditioning": False,
+            "scenes": [],
+        }
+        generated: dict[int, Path] = {}
+        total = len(context.storyboard)
+
+        for completed, scene in enumerate(context.storyboard):
+            scene_id = int(scene["scene_id"])
+            raw_shot = (scene.get("shots") or [{}])[0]
+            shot_id = raw_shot.get("shot_id") or raw_shot.get("id") or f"shot_{completed + 1:03d}"
+            image_path = images_dir / f"scene_{scene_id:03d}.jpg"
+            manifest_shot = {
+                "shot_id": shot_id,
+                "environment": scene.get("visual_description") or scene.get("environment") or "",
+                "characters": [],
+                "camera": raw_shot.get("camera") or raw_shot.get("shot_type") or scene.get("camera") or "",
+                "lighting": raw_shot.get("lighting") or scene.get("lighting") or "",
+                "composition": raw_shot.get("composition") or scene.get("composition") or "",
+                "action": raw_shot.get("action") or scene.get("action") or "",
+                "image_status": "pending",
+                "image_path": None,
+            }
+            visual_manifest["scenes"].append({"scene_id": scene_id, "shots": [manifest_shot]})
+            self._write_manifest(visual_manifest_path, visual_manifest)
+            audit.emit("VISUAL_GENERATION_STARTED", scene_id=scene_id, shot_id=shot_id)
+            self._progress(context, completed, total, scene_id, shot_id, "Generating image...")
+
+            prompt = scene.get("image_prompt", "") or f"2D illustration for: {scene.get('visual_description', '')}"
+            topic = getattr(context, "chosen_topic", None) or context.topic
+            if topic and topic.lower() not in prompt.lower():
+                prompt = f"{topic} - {prompt}"
+            scene_text = f"{scene.get('narration', '')} {scene.get('visual_description', '')}".lower()
+            char_hints = [visual for name, visual in char_visuals.items() if name.lower() in scene_text]
+            manifest_shot["characters"] = [name for name in char_visuals if name.lower() in scene_text]
+            references = _scene_character_references(context.character_sheet, scene_text, str(scene.get("character_name") or ""))
+            if scene.get("character_motion") and scene.get("character_name"):
+                position = str(scene.get("character_position", "right"))
+                prompt += f". Environment plate only, no people. Leave open foreground space on the {position} for the approved character asset"
+                generation_references = []
+            else:
+                generation_references = references
+                if char_hints:
+                    prompt += ". Character refs: " + "; ".join(char_hints)
+            for label in ("camera", "lighting", "composition", "action"):
+                if manifest_shot[label]:
+                    prompt += f". {label.title()}: {manifest_shot[label]}"
+            prompt = _production_prompt(prompt, context.style, scene.get("asset_type", "cinematic-reenactment"))
+            asset_type = str(scene.get("asset_type", "cinematic-reenactment"))
+            provider = settings.image_provider.lower()
+            expected_size = (
+                (settings.image_width, settings.image_height)
+                if provider == "gemini" or asset_type in {"animated-map", "newspaper-document", "evidence-board", "diagram"}
+                else (768, 432)
+            )
+            reference_key = "|".join(f"{p}:{p.stat().st_size}:{p.stat().st_mtime_ns}" for p in references if p.exists())
+            prompt_hash = hashlib.sha256(f"{prompt}|{reference_key}".encode()).hexdigest()[:16]
+
+            try:
+                if image_path.exists() and hash_manifest.get(str(scene_id)) == prompt_hash:
+                    validate_image(image_path, *expected_size)
+                    result = image_path
+                else:
+                    result = self._generate_image(
+                        prompt, image_path, scene_id, generation_references,
+                        visual_quality=str(scene.get("visual_quality") or "DEBUG"),
+                        audit=audit, shot_id=shot_id,
+                    )
+                    from app.images.editorial_compositor import enhance_structured_asset
+                    result = enhance_structured_asset(result, asset_type, scene_id)
+                    validate_image(result, *expected_size)
+                self._prepare_scene_asset(scene, result, images_dir, context.character_sheet)
+            except Exception as exc:
+                manifest_shot["image_status"] = "failed"
+                self._write_manifest(visual_manifest_path, visual_manifest)
+                write_failure_report(
+                    context.output_dir, exc, scene_id=scene_id, shot_id=shot_id,
+                    retry_count=getattr(exc, "retry_count", 0),
+                    prompt_id=getattr(exc, "prompt_id", None),
+                    provider="comfyui_local" if provider == "comfyui" else provider,
+                )
+                audit.emit("VISUALS_FAILED", scene_id=scene_id, shot_id=shot_id, error=f"{type(exc).__name__}: {exc}")
+                raise
+
+            generated[scene_id] = result
+            hash_manifest[str(scene_id)] = prompt_hash
+            hash_manifest_path.write_text(json.dumps(hash_manifest, indent=2), encoding="utf-8")
+            manifest_shot.update(image_status="complete", image_path=str(result.resolve()))
+            self._write_manifest(visual_manifest_path, visual_manifest)
+            audit.emit("IMAGE_VALIDATED", scene_id=scene_id, shot_id=shot_id, path=str(result.resolve()))
+            audit.emit("VISUAL_ASSET_SAVED", scene_id=scene_id, shot_id=shot_id, path=str(result.resolve()))
+            self._progress(context, completed + 1, total, scene_id, shot_id, "Image validated")
+
+        context.images = generated
+        self._active_visual_trace = None
+        logger.info("assets_complete", project=context.project_id, images=len(generated))
+        return generated
+
+    @staticmethod
+    def _write_manifest(path: Path, manifest: dict) -> None:
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(manifest, indent=2, default=str), encoding="utf-8")
+        temporary.replace(path)
+
+    @staticmethod
+    def _progress(context: AgentContext, completed: int, total: int, scene_id: int, shot_id, message: str) -> None:
+        if context.progress_callback:
+            context.progress_callback({"completed": completed, "total": total, "scene_id": scene_id, "shot_id": shot_id, "message": message})
+
     def _prepare_scene_asset(
         self,
         scene: dict,
@@ -148,7 +281,7 @@ class AssetAgent(Agent):
 
         from app.images.production_assets import evaluate_asset, extract_environment_layers
 
-        quality = evaluate_asset(path, "environment")
+        quality = evaluate_asset(path, str(scene.get("asset_type", "environment")))
         scene["asset_quality"] = [asdict(quality)]
         if visual_quality == "PRODUCTION" and not quality.passed:
             raise ValueError(
@@ -169,17 +302,35 @@ class AssetAgent(Agent):
         self, prompt: str, output_path: Path, scene_id: int,
         reference_images: list[Path] | None = None,
         visual_quality: str = "DEBUG",
+        audit: VisualStageLog | None = None,
+        shot_id: str | int | None = None,
     ) -> Path:
         provider = settings.image_provider.lower()
 
+        if provider == "comfyui":
+            last_exc: Exception | None = None
+            for retry_count in range(2):
+                try:
+                    return self._comfyui(prompt, output_path, scene_id, audit=audit, shot_id=shot_id)
+                except Exception as exc:
+                    last_exc = exc
+                    setattr(exc, "retry_count", retry_count)
+                    message = str(exc).lower()
+                    # A generation timeout is not safe to retry: the original
+                    # ComfyUI prompt may still be executing and a retry would
+                    # enqueue duplicate expensive work. Only reconnect once
+                    # when submission/polling could not reach the server.
+                    retryable = any(token in message for token in ("unreachable", "refused", "502", "503", "504"))
+                    if not retryable or retry_count >= 1:
+                        raise
+                    if audit:
+                        audit.emit("VISUAL_GENERATION_RETRY", scene_id=scene_id, shot_id=shot_id, error=str(exc), retry_count=retry_count + 1)
+                    time.sleep(min(2 ** retry_count, 5))
+            assert last_exc is not None
+            raise last_exc
+
         if provider == "gemini":
-            try:
-                return self._gemini_imagen(
-                    prompt, output_path, scene_id, reference_images or []
-                )
-            except Exception as exc:
-                logger.warning("gemini_imagen_failed", scene=scene_id, error=str(exc))
-                # Fall through to Pollinations
+            return self._gemini_imagen(prompt, output_path, scene_id, reference_images or [])
 
         if reference_images:
             # A text-only fallback may create the wrong person. Use the verified
@@ -190,17 +341,11 @@ class AssetAgent(Agent):
         if provider == "stability":
             stability_key = settings.stability_api_key
             if stability_key:
-                try:
-                    return self._stability_ai(prompt, output_path, stability_key)
-                except Exception as exc:
-                    logger.warning("stability_failed", scene=scene_id, error=str(exc))
+                return self._stability_ai(prompt, output_path, stability_key)
+            raise RuntimeError("Stability provider selected but STABILITY_API_KEY is not configured")
 
-        if provider in ("pollinations", "gemini", "stability"):
-            # Pollinations is the universal free fallback
-            try:
-                return self._pollinations(prompt, output_path, scene_id)
-            except Exception as exc:
-                logger.warning("pollinations_failed", scene=scene_id, error=str(exc))
+        if provider == "pollinations":
+            return self._pollinations(prompt, output_path, scene_id)
 
         # Final fallback — colored placeholder
         if str(visual_quality).upper() != "DEBUG":
@@ -209,6 +354,75 @@ class AssetAgent(Agent):
                 "Use a cached illustrated asset or render this scene in explicit DEBUG mode."
             )
         return self._placeholder(prompt, output_path, scene_id)
+
+    def _comfyui(
+        self, prompt: str, output_path: Path, scene_id: int,
+        *, audit: VisualStageLog | None = None, shot_id=None,
+    ) -> Path:
+        """Generate a landscape scene with the local checked-in ComfyUI workflow."""
+        from PIL import Image
+
+        from app.image_generation.comfyui_client import ComfyUIClient
+
+        client = ComfyUIClient(
+            settings.comfyui_base_url,
+            timeout=settings.comfyui_generation_timeout_seconds,
+            connect_timeout=settings.comfyui_connect_timeout_seconds,
+            poll_interval=settings.comfyui_poll_interval_seconds,
+        )
+        temporary = output_path.with_suffix(".comfy.png")
+        def progress(event: str, details: dict) -> None:
+            event_name = {
+                "workflow_created": "COMFYUI_WORKFLOW_CREATED",
+                "submitting": "COMFYUI_REQUEST_SENT",
+                "generating": "COMFYUI_PROMPT_ID_RECEIVED",
+                "waiting": "COMFYUI_WAIT_STARTED",
+                "complete": "COMFYUI_GENERATION_COMPLETED",
+                "retrieving": "COMFYUI_GENERATION_COMPLETED",
+                "downloading": "IMAGE_DOWNLOAD_STARTED",
+                "retrieved": "IMAGE_RETRIEVED",
+                "saved": "IMAGE_RETRIEVED",
+            }[event]
+            if audit:
+                audit.emit(event_name, scene_id=scene_id, shot_id=shot_id, **details)
+                if event == "generating":
+                    audit.emit("COMFYUI_GENERATION_STARTED", scene_id=scene_id, shot_id=shot_id, **details)
+            visual_trace = getattr(self, "_active_visual_trace", None)
+            marker = {"workflow_created": 10, "submitting": 11, "generating": 12, "waiting": 13, "complete": 14, "downloading": 15}.get(event)
+            if visual_trace and marker:
+                visual_trace.mark(marker, scene_id=scene_id, shot_id=shot_id, **details)
+
+        if getattr(self, "_active_visual_trace", None):
+            self._active_visual_trace.mark(9, scene_id=scene_id, shot_id=shot_id, url=settings.comfyui_base_url)
+        client.health()
+        client.generate(
+            settings.comfyui_scene_workflow,
+            prompt,
+            temporary,
+            negative_prompt=(
+                "text, words, watermark, logo, malformed anatomy, extra limbs, "
+                "duplicate people, modern objects, low detail, blurry"
+            ),
+            width=768,
+            height=432,
+            steps=8,
+            cfg=6.5,
+            seed=19850317 + int(scene_id),
+            progress_callback=progress,
+        )
+        if audit:
+            validate_image(temporary, 768, 432)
+        if getattr(self, "_active_visual_trace", None):
+            self._active_visual_trace.mark(16, scene_id=scene_id, shot_id=shot_id, path=str(temporary))
+        with Image.open(temporary) as image:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            image.convert("RGB").save(output_path, "JPEG", quality=94)
+        temporary.unlink(missing_ok=True)
+        if audit:
+            validate_image(output_path, 768, 432)
+        if getattr(self, "_active_visual_trace", None):
+            self._active_visual_trace.mark(17, scene_id=scene_id, shot_id=shot_id, path=str(output_path.resolve()))
+        return output_path
 
     # ── Gemini Imagen 3 ───────────────────────────────────────────────────
 
@@ -248,20 +462,30 @@ class AssetAgent(Agent):
 
     def _pollinations(self, prompt: str, output_path: Path, scene_id: int = 0) -> Path:
         import urllib.parse
+        from io import BytesIO
+        from PIL import Image, ImageOps
+
         # enhance=false: prevent Pollinations from rewriting the prompt with its
         # own LLM, which replaces specific subjects with generic imagery.
         safe = urllib.parse.quote(prompt[:800])
         seed = scene_id if scene_id > 0 else 42
+        # 768x432 matches what _generate_image validates this path against.
+        # Pollinations' anonymous free tier caps actual output resolution
+        # regardless of the requested width/height (observed capping to a
+        # smaller size while preserving aspect ratio), so the download is
+        # always locally fit to the exact expected size rather than trusted.
         url = (
             f"https://image.pollinations.ai/prompt/{safe}"
-            f"?width=1920&height=1080&model=flux&nologo=true&enhance=false&seed={seed}"
+            f"?width=768&height=432&model=flux&nologo=true&enhance=false&seed={seed}"
         )
         req = urllib.request.Request(url, headers={"User-Agent": "AIYouTubeBot/1.0"})
         with urllib.request.urlopen(req, timeout=120) as resp:
             data = resp.read()
         if len(data) < 500:
             raise ValueError("Pollinations returned empty image")
-        output_path.write_bytes(data)
+        image = Image.open(BytesIO(data)).convert("RGB")
+        fitted = ImageOps.fit(image, (768, 432), Image.Resampling.LANCZOS)
+        fitted.save(output_path, "JPEG", quality=94)
         return output_path
 
     # ── Placeholder ───────────────────────────────────────────────────────

@@ -340,8 +340,8 @@ class TestContentSafety:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TestMusicAgentFallback:
-    def test_silent_fallback_generated_when_offline(self, tmp_path, monkeypatch):
-        """When all download attempts fail, a silent MP3 is generated via FFmpeg."""
+    def test_missing_licensed_music_is_reported_without_fake_track(self, tmp_path, monkeypatch):
+        """Offline music is explicit; silence is handled by the final mixer."""
         from app.agents.music_agent import MusicAgent
         from app.agents.base import AgentContext
 
@@ -364,7 +364,7 @@ class TestMusicAgentFallback:
         assert result.success is True  # agent should not fail even without music
         if ffmpeg_available:
             # Silent fallback was generated
-            assert ctx.music_path is not None
+            assert ctx.music_path is None
         # If ffmpeg is not available, music_path may be None — that's also acceptable
 
     def test_local_track_used_when_available(self, tmp_path, monkeypatch):

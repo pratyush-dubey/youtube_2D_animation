@@ -49,6 +49,12 @@ class ResearchAgent(Agent):
         )
         result = researcher.run(topic=topic, language=context.language)
         context.research = result
+        # The production director hydrates completed stages from the project
+        # directory on resume.  Researcher also persists to SQL, but that is a
+        # separate cache and cannot satisfy the director's file contract.
+        research_path = context.output_dir / "research.json"
+        research_path.parent.mkdir(parents=True, exist_ok=True)
+        research_path.write_text(result.model_dump_json(indent=2), encoding="utf-8")
 
         logger.info(
             "research_complete",

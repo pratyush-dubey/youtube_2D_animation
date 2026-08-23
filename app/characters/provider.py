@@ -122,8 +122,19 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         progress_callback: Callable[[str, dict[str, Any]], None] | None = None,
     ):
         from app.image_generation.comfyui_client import ComfyUIClient
-        timeout = os.getenv("COMFYUI_GENERATION_TIMEOUT_SECONDS", os.getenv("COMFYUI_TIMEOUT_SECONDS", "1800"))
-        self.client = ComfyUIClient(base_url, timeout=int(timeout))
+        # pydantic-settings reads .env internally without populating
+        # os.environ, so a plain os.getenv() here never sees .env's
+        # COMFYUI_GENERATION_TIMEOUT_SECONDS - it silently used the 600s
+        # hardcoded fallback below regardless of the configured 900s (or
+        # any other value), which is why reference-conditioned img2img
+        # generation (slower than plain text-to-image) kept timing out at
+        # exactly 600s. settings.comfyui_generation_timeout_seconds is the
+        # same value, correctly loaded.
+        self.client = ComfyUIClient(
+            base_url, timeout=settings.comfyui_generation_timeout_seconds,
+            connect_timeout=settings.comfyui_connect_timeout_seconds,
+            poll_interval=settings.comfyui_poll_interval_seconds,
+        )
         self.workflow = workflow or Path(__file__).resolve().parents[2] / "workflows" / "character_master.json"
         self.progress_callback = progress_callback
 
@@ -144,12 +155,14 @@ class ComfyUICharacterProvider(CharacterImageProvider):
             "inconsistent face, asymmetrical eyes, plastic skin, white man, European man, Middle Eastern man, "
             "beard, stubble, handlebar moustache, curled moustache, long hair, mullet, bindi, tilak, suspenders, braces, "
             "mandarin collar, buttoned neck, coat, jacket, garment tied at waist, Victorian costume, fashion model, "
-            "exaggerated long legs, uniform, lab coat, modern slim-fit clothing, photograph, 3d render, text, watermark"
+            "exaggerated long legs, uniform, lab coat, modern slim-fit clothing, photograph, 3d render, text, watermark, "
+            "wall, room, floor, canvas, poster, picture frame, easel, propped against wall, interior background, "
+            "furniture, indoor scene, baseboard, framed artwork"
         )
         try:
             return self.client.generate(
                 self.workflow, prompt, output, reference=reference,
-                negative_prompt=negative, width=512, height=768, steps=8 if reference else 12,
+                negative_prompt=negative, width=512, height=768, steps=8,
                 cfg=6.5, seed=19850317, denoise=denoise, progress_callback=self.progress_callback,
             )
         except Exception as exc:
@@ -195,8 +208,13 @@ class GeminiCharacterProvider(CharacterImageProvider):
     zero_cost = False
 
     def __init__(self):
-        self.model = os.getenv("GEMINI_IMAGE_MODEL", "")
-        self.api_key = os.getenv("GEMINI_API_KEY", "")
+        # Same os.getenv-vs-.env gap as ComfyUICharacterProvider above: these
+        # two are real, actively-configured .env values (the same
+        # GEMINI_API_KEY the LLM provider uses successfully via `settings`),
+        # so reading them with os.getenv here always saw an empty string and
+        # left this provider permanently unconfigured regardless of .env.
+        self.model = os.getenv("GEMINI_IMAGE_MODEL") or settings.gemini_image_model
+        self.api_key = os.getenv("GEMINI_API_KEY") or settings.gemini_api_key
         self.provider = None
     @property
     def configured(self): return bool(self.api_key and "image" in self.model.lower())
@@ -241,3 +259,4 @@ def create_character_image_provider(
         if provider.configured: return provider
         return BlockedCharacterImageProvider(BLOCKED_MESSAGE + " Automatic1111 is selected but unreachable.")
     return BlockedCharacterImageProvider()
+from app.config.settings import settings

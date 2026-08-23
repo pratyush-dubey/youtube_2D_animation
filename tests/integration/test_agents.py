@@ -194,6 +194,7 @@ class TestResearchAgent:
         assert result.agent_name == "research_agent"
         assert context.research is not None
         assert len(context.research.facts) == 1
+        assert (context.output_dir / "research.json").is_file()
 
     def test_failure_captured_in_result(self, tmp_path):
         from app.agents.research_agent import ResearchAgent
@@ -353,13 +354,19 @@ class TestAssetAgent:
         result = AssetAgent().run(ctx)
         assert result.success is False
 
-    def test_placeholder_fallback_creates_images(self, tmp_path):
+    def test_mock_provider_creates_images(self, tmp_path):
         from app.agents.asset_agent import AssetAgent
+        from PIL import Image
         ctx = _make_context(tmp_path)
         ctx.storyboard = STORYBOARD_DATA["scenes"]
 
         # Force placeholder — no cloud API calls
-        with patch("urllib.request.urlopen", side_effect=Exception("offline")):
+        def generate(_self, _prompt, output, *_args, **_kwargs):
+            gradient = Image.linear_gradient("L").resize((768, 432))
+            Image.merge("RGB", (gradient, gradient.transpose(Image.Transpose.FLIP_TOP_BOTTOM), gradient)).save(output, "JPEG")
+            return output
+
+        with patch.object(AssetAgent, "_generate_image", generate):
             result = AssetAgent().run(ctx)
 
         assert result.success is True
@@ -369,17 +376,20 @@ class TestAssetAgent:
 
     def test_resumes_existing_images(self, tmp_path):
         from app.agents.asset_agent import AssetAgent
+        from PIL import Image
         ctx = _make_context(tmp_path)
         ctx.storyboard = STORYBOARD_DATA["scenes"]
 
-        # Pre-create images
-        img_dir = ctx.output_dir / "images"
-        img_dir.mkdir(parents=True, exist_ok=True)
-        for i in (1, 2):
-            p = img_dir / f"scene_{i:03d}.jpg"
-            p.write_bytes(b"\xff\xd8\xff" + b"\x00" * 2000)  # fake JPEG > 1000 bytes
+        def generate(_self, _prompt, output, *_args, **_kwargs):
+            gradient = Image.linear_gradient("L").resize((768, 432))
+            Image.merge("RGB", (gradient, gradient.transpose(Image.Transpose.FLIP_TOP_BOTTOM), gradient)).save(output, "JPEG")
+            return output
 
-        with patch("urllib.request.urlopen", side_effect=Exception("should not be called")):
+        with patch.object(AssetAgent, "_generate_image", generate):
+            first = AssetAgent().run(ctx)
+        assert first.success is True
+
+        with patch.object(AssetAgent, "_generate_image", side_effect=Exception("should not be called")):
             result = AssetAgent().run(ctx)
 
         assert result.success is True
@@ -477,7 +487,7 @@ class TestMusicAgent:
         music_dir = tmp_path / "assets" / "music"
         music_dir.mkdir(parents=True, exist_ok=True)
         track_file = music_dir / "test_track.mp3"
-        track_file.write_bytes(b"\xff\xfb" + b"\x00" * 1000)  # fake MP3
+        track_file.write_bytes(b"\xff\xfb" + b"\x00" * 12_000)  # passes minimum asset-size gate
         meta_file = music_dir / "metadata.json"
         meta_file.write_text(json.dumps([{
             "file": "test_track.mp3",

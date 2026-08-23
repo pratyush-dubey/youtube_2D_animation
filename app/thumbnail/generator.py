@@ -124,7 +124,7 @@ def render_thumbnail(
     Returns the output path.
     """
     try:
-        from PIL import Image, ImageDraw
+        from PIL import Image, ImageDraw, ImageEnhance, ImageOps
     except ImportError as exc:
         raise ImportError("Pillow not installed. Run: pip install Pillow") from exc
 
@@ -143,8 +143,29 @@ def render_thumbnail(
     c2 = _hex_to_rgb(bg2_color)
     _draw_gradient_bg(draw, THUMB_W, THUMB_H, c1, c2)
 
+    background_image = Path(str(concept.get("background_image", "")))
+    if background_image.is_file():
+        plate = ImageOps.fit(Image.open(background_image).convert("RGB"), (THUMB_W, THUMB_H), Image.Resampling.LANCZOS)
+        plate = ImageEnhance.Brightness(plate).enhance(0.48)
+        img = Image.blend(img, plate, 0.66)
+        draw = ImageDraw.Draw(img)
+
     # Accent bar on left
     _draw_accent_bar(draw, _hex_to_rgb(accent_color), THUMB_W, THUMB_H)
+
+    focal_image = Path(str(concept.get("focal_image", "")))
+    if focal_image.is_file():
+        focal = Image.open(focal_image).convert("RGBA")
+        bbox = focal.getchannel("A").getbbox()
+        if bbox:
+            focal = focal.crop(bbox)
+            target_h = round(THUMB_H * 0.92)
+            scale = target_h / focal.height
+            focal = focal.resize((max(1, round(focal.width * scale)), target_h), Image.Resampling.LANCZOS)
+            stage = img.convert("RGBA")
+            stage.alpha_composite(focal, (THUMB_W - focal.width - 20, THUMB_H - focal.height))
+            img = stage.convert("RGB")
+            draw = ImageDraw.Draw(img)
 
     # Layout: text fills left 65%, right 35% reserved for focal image
     text_zone_w = int(THUMB_W * 0.62)
@@ -241,7 +262,12 @@ class ThumbnailGenerator:
                 prompt,
                 schema_hint="ThumbnailConcepts",
                 temperature=0.8,
-                max_tokens=2000,
+                # Three compact concepts fit comfortably below this ceiling.
+                # The renderer already has a deterministic fallback, so one
+                # bounded attempt is preferable to repeated multi-minute local
+                # generations.
+                max_tokens=1000,
+                max_retries=1,
             )
 
             self.cost_tracker.record(

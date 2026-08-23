@@ -31,8 +31,9 @@ class VoiceAgent(Agent):
     max_retries = 2
 
     def _execute(self, context: AgentContext) -> dict[int, Path]:
-        if not context.storyboard:
-            raise ValueError("StoryboardAgent must run before VoiceAgent")
+        sources = list(context.storyboard or _script_narration_sources(context.script))
+        if not sources:
+            raise ValueError("ScriptAgent must run before VoiceAgent")
 
         audio_dir = context.output_dir / "audio" / "narration"
         audio_dir.mkdir(parents=True, exist_ok=True)
@@ -52,8 +53,8 @@ class VoiceAgent(Agent):
         except Exception:
             pronunciation = {}
 
-        total_scenes = len(context.storyboard)
-        for scene_index, scene in enumerate(context.storyboard):
+        total_scenes = len(sources)
+        for scene_index, scene in enumerate(sources):
             scene_id = scene["scene_id"]
             text = scene.get("narration", "").strip()
             if not text:
@@ -93,6 +94,31 @@ class VoiceAgent(Agent):
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
         context.narration_files = narration
+        from app.timeline.master import measure_audio_duration
+        cursor = 0.0
+        alignment = []
+        for scene in sources:
+            scene_id = int(scene["scene_id"])
+            path = narration.get(scene_id)
+            if not path:
+                continue
+            duration = measure_audio_duration(path)
+            alignment.append({
+                "segment_id": f"N{scene_id:03d}", "scene_id": scene_id,
+                "start": round(cursor, 3), "end": round(cursor + duration, 3),
+                "duration": duration, "text": str(scene.get("narration", "")).strip(),
+                "audio_path": str(path.resolve()), "source": "measured_tts_segment",
+            })
+            scene["duration_seconds"] = duration
+            cursor += duration
+        context.narration_alignment = alignment
+        if not context.storyboard:
+            context.storyboard = sources
+        (context.output_dir / "narration_alignment.json").write_text(
+            json.dumps({"clock": "measured_tts_segments", "duration": round(cursor, 3), "segments": alignment}, indent=2),
+            encoding="utf-8",
+        )
+        _concat_narration(context.output_dir, [narration[int(item["scene_id"])] for item in alignment])
         logger.info(
             "voice_complete",
             project=context.project_id,
@@ -276,3 +302,44 @@ def _spoken_text(text: str, mood: str) -> str:
     if mood in {"tense", "dramatic"} and spoken.endswith("?"):
         return spoken
     return spoken
+
+
+def _script_narration_sources(script) -> list[dict]:
+    if script is None:
+        return []
+    blocks = [getattr(script, "hook", "")]
+    blocks.extend(getattr(section, "narration", "") for section in getattr(script, "sections", []))
+    blocks.extend([getattr(script, "conclusion", ""), getattr(script, "call_to_action", "")])
+    sentences = []
+    for block in blocks:
+        sentences.extend(
+            part.strip() for part in __import__("re").split(r"(?<=[.!?])\s+", str(block).strip())
+            if part.strip()
+        )
+    return [
+        {
+            "scene_id": index, "narration": sentence,
+            "voice_emotion": "serious", "music_mood": "restrained_tension",
+            "visual_type": "ai_reconstruction",
+        }
+        for index, sentence in enumerate(sentences, 1)
+    ]
+
+
+def _concat_narration(output_dir: Path, paths: list[Path]) -> Path | None:
+    if not paths:
+        return None
+    audio_dir = output_dir / "audio"
+    manifest = audio_dir / "narration_concat.txt"
+    manifest.write_text(
+        "".join(f"file '{path.resolve().as_posix()}'\n" for path in paths), encoding="utf-8",
+    )
+    output = output_dir / "narration.wav"
+    result = subprocess.run(
+        [settings.ffmpeg_path, "-y", "-hide_banner", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(manifest), "-c:a", "pcm_s16le", str(output)],
+        capture_output=True, text=True,
+    )
+    if result.returncode:
+        logger.warning("narration_concat_failed", error=result.stderr[-500:])
+        return None
+    return output
