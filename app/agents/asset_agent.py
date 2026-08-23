@@ -563,14 +563,28 @@ _ASSET_DIRECTIONS = {
 
 
 def _production_prompt(prompt: str, style: str, asset_type: str) -> str:
-    """Lock every image to one art direction and caption-safe composition."""
+    """Lock every image to one art direction and caption-safe composition.
+
+    Subject leads, style bible trails: providers (Pollinations included) cap
+    prompt length and silently truncate the tail. The style bible + asset
+    direction + tone preamble alone runs ~550 chars fixed, identical on
+    every scene of every project - with the scene's own story-grounded
+    Subject text placed after it, that text was frequently the part getting
+    cut off, leaving only the generic boilerplate to actually reach the
+    image provider. That's why unrelated projects could end up rendering
+    visually similar scenes despite each scene's prompt supposedly being
+    grounded in its own narration. Putting Subject first means truncation
+    (if it still happens) eats into the redundant style restatement instead
+    of the one part of the prompt that makes this scene different from any
+    other.
+    """
     requested_style = (style or "documentary").strip()
     asset_direction = _ASSET_DIRECTIONS.get(
         str(asset_type).lower(), _ASSET_DIRECTIONS["cinematic-reenactment"]
     )
     return (
-        f"{_STYLE_BIBLE}. Visual system: {asset_direction}. Tone: {requested_style}. "
         f"Subject: {prompt.strip()}. "
+        f"Visual system: {asset_direction}. Tone: {requested_style}. {_STYLE_BIBLE}. "
         "Keep the main subject inside the central 70 percent safe area and leave "
         f"clean lower-third space for captions. {_NEGATIVE_PROMPT}."
     )
@@ -627,11 +641,16 @@ def _attach_character_assets(scene: dict, character_sheet: dict) -> None:
         rig = Path(str(entry.get("rig_manifest") or ""))
         if rig.is_file():
             scene["character_rig_manifest"] = str(rig.resolve())
-        expressions = {
-            str(name): str(Path(str(path)).resolve())
-            for name, path in (entry.get("expressions") or {}).items()
-            if Path(str(path)).is_file()
-        }
+        raw_expressions = entry.get("expressions") or {}
+        expressions = (
+            {
+                str(name): str(Path(str(path)).resolve())
+                for name, path in raw_expressions.items()
+                if Path(str(path)).is_file()
+            }
+            if isinstance(raw_expressions, dict)
+            else {}
+        )
         if expressions:
             scene["character_expressions"] = expressions
         reference = Path(str(entry.get("illustrated_reference") or ""))

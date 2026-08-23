@@ -278,6 +278,9 @@ class TimelineDirector(SpecializedDirector):
                 "character_id": character_id,
                 "environment": f"{topic_label}: {' '.join(str(item['text']).split())[:180]}",
                 "visual_type": "ai_reconstruction",
+                "section_id": item.get("section_id"), "section_title": item.get("section_title"),
+                "section_narration": item.get("section_narration"),
+                "emotion": item.get("voice_emotion"), "music": item.get("music_mood"),
             }
             for item in context.narration_alignment
         ]
@@ -286,42 +289,75 @@ class TimelineDirector(SpecializedDirector):
             output_path=context.output_dir / "timeline.json",
         )
         context.master_timeline = timeline
+        # Group consecutive shots that belong to the same script section into
+        # one scene sharing a single illustrated background instead of giving
+        # every narration sentence its own brand-new illustration and its own
+        # independently-rendered clip. That one-illustration-per-sentence
+        # default was the actual mechanism behind the "slideshow" look: a hard
+        # cut to a fresh painting every 2-8 seconds regardless of whether the
+        # story had even changed location. Shots inside a group keep their own
+        # camera/action/framing as sub-shots (the renderer already selects the
+        # active sub-shot by elapsed time - see _active_shot in
+        # app/video/animated_renderer.py) so continuity of place doesn't come
+        # at the cost of continuity of blocking.
+        groups: list[list[dict]] = []
+        for shot in timeline["shots"]:
+            key = shot.get("section_id") or shot["shot_id"]
+            if groups and (groups[-1][0].get("section_id") or groups[-1][0]["shot_id"]) == key:
+                groups[-1].append(shot)
+            else:
+                groups.append([shot])
         scenes = []
-        for index, shot in enumerate(timeline["shots"], 1):
-            action = shot["action"]
-            camera_move = {
-                "tracking": "track_character", "follow": "follow_character",
-                "subtle_orbit": "orbit_simulation", "dolly": "dolly_in",
-                "settle": "handheld", "locked_medium": "static", "locked": "static",
-            }.get(shot["camera"]["move"], "slow_push")
-            scenes.append({
-                "scene_id": index, "duration_seconds": shot["duration"],
-                "narration": shot["narration_segment"]["text"],
-                "visual_description": f"{shot['environment']}; {character_id} performs {action}",
-                "image_prompt": f"AI reconstruction, {shot['environment']}, full-body {character_id}, action-ready composition, no text",
-                "visual_type": shot["visual_type"], "still_image_shot": shot["still_image_shot"],
-                # AssetAgent._prepare_scene_asset only attaches character_rig_manifest
-                # (and runs the asset quality gate) for DRAFT/PRODUCTION scenes; a
-                # scene with no visual_quality silently skips rig attachment.
-                "visual_quality": settings.visual_quality,
-                "character_name": character_id, "character_action": action,
-                "character_motion": action, "character_is_fictional": False,
-                "environment": shot["environment"], "emotion": shot["emotion"],
-                "voice_emotion": shot["emotion"], "music_mood": shot["music"],
-                "sfx": shot["sound_effects"], "asset_type": "cinematic-reenactment",
-                "sfx_events": [
-                    {**event, "local_start": round(float(event["start"]) - float(shot["start"]), 3)}
-                    for event in timeline["tracks"]["sfx"] if event.get("shot_id") == shot["shot_id"]
-                ],
-                "shots": [{
-                    "id": shot["shot_id"], "start": 0.0, "duration": shot["duration"],
+        for index, group in enumerate(groups, 1):
+            lead = group[0]
+            scene_environment = str(lead.get("section_title") or lead["environment"])
+            scene_subject = str(lead.get("section_narration") or lead["environment"])
+            scene_start = float(lead["start"])
+            cumulative = 0.0
+            sub_shots = []
+            character_actions = []
+            for shot in group:
+                action = shot["action"]
+                character_actions.append(action)
+                camera_move = {
+                    "tracking": "track_character", "follow": "follow_character",
+                    "subtle_orbit": "orbit_simulation", "dolly": "dolly_in",
+                    "settle": "handheld", "locked_medium": "static", "locked": "static",
+                }.get(shot["camera"]["move"], "slow_push")
+                sub_shots.append({
+                    "id": shot["shot_id"], "start": round(cumulative, 3), "duration": shot["duration"],
                     "shot_type": shot["framing"], "camera": camera_move,
                     "characters": shot["characters"], "action": action,
                     "expression": shot["emotion"], "subject": shot["environment"],
                     "transition": "cut", "master_start": shot["start"],
                     "master_end": shot["end"],
                     "character_position": shot.get("character_position"),
-                }],
+                })
+                cumulative += float(shot["duration"])
+            duration_seconds = round(cumulative, 3)
+            primary_action = character_actions[0]
+            scenes.append({
+                "scene_id": index, "duration_seconds": duration_seconds,
+                "narration": " ".join(shot["narration_segment"]["text"] for shot in group),
+                "visual_description": f"{scene_subject}; {character_id} performs {primary_action}",
+                "image_prompt": f"AI reconstruction, {scene_subject}, full-body {character_id}, action-ready composition, no text",
+                "visual_type": lead["visual_type"], "still_image_shot": lead["still_image_shot"],
+                # AssetAgent._prepare_scene_asset only attaches character_rig_manifest
+                # (and runs the asset quality gate) for DRAFT/PRODUCTION scenes; a
+                # scene with no visual_quality silently skips rig attachment.
+                "visual_quality": settings.visual_quality,
+                "character_name": character_id, "character_action": primary_action,
+                "character_motion": primary_action, "character_is_fictional": False,
+                "environment": scene_environment, "emotion": lead["emotion"],
+                "voice_emotion": lead["emotion"], "music_mood": lead["music"],
+                "sfx": sorted({sfx for shot in group for sfx in shot["sound_effects"]}),
+                "asset_type": "cinematic-reenactment",
+                "sfx_events": [
+                    {**event, "local_start": round(float(event["start"]) - scene_start, 3)}
+                    for shot in group for event in timeline["tracks"]["sfx"]
+                    if event.get("shot_id") == shot["shot_id"]
+                ],
+                "shots": sub_shots,
             })
         context.storyboard = scenes
         storyboard = {

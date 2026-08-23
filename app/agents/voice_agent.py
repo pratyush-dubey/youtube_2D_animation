@@ -108,6 +108,9 @@ class VoiceAgent(Agent):
                 "start": round(cursor, 3), "end": round(cursor + duration, 3),
                 "duration": duration, "text": str(scene.get("narration", "")).strip(),
                 "audio_path": str(path.resolve()), "source": "measured_tts_segment",
+                "section_id": scene.get("section_id"), "section_title": scene.get("section_title"),
+                "section_narration": scene.get("section_narration"),
+                "voice_emotion": scene.get("voice_emotion"), "music_mood": scene.get("music_mood"),
             })
             scene["duration_seconds"] = duration
             cursor += duration
@@ -304,26 +307,63 @@ def _spoken_text(text: str, mood: str) -> str:
     return spoken
 
 
+_TENSE_WORDS = (
+    "danger", "escape", "threat", "attack", "gun", "kill", "captur", "enemy",
+    "fear", "chase", "flee", "hostile", "trap", "surround", "risk", "die",
+)
+_MYSTERIOUS_WORDS = ("secret", "mystery", "unknown", "hidden", "unclear", "wonder", "vanish")
+_HOPEFUL_WORDS = ("finally", "success", "triumph", "victory", "freedom", "safe", "rescue", "achiev", "escaped")
+_CALM_WORDS = ("quiet", "peaceful", "ordinary", "routine", "calm", "morning")
+
+
+def _infer_mood(text: str) -> tuple[str, str]:
+    """Per-sentence (voice_emotion, music_mood), derived from the sentence's
+    own words instead of one hardcoded literal repeated for every sentence in
+    the video. The previous constant ("serious"/"restrained_tension" for
+    every single line) meant the narrator's delivery never varied and the
+    background music mood was the same regardless of what a given video was
+    actually about - both read from these exact two fields (see
+    _delivery_profile below and app/timeline/master.py's shot "music" field).
+    """
+    lower = text.lower()
+    if any(word in lower for word in _TENSE_WORDS):
+        return "tense", "tense"
+    if any(word in lower for word in _MYSTERIOUS_WORDS):
+        return "mysterious", "mysterious"
+    if any(word in lower for word in _HOPEFUL_WORDS):
+        return "hopeful", "uplifting"
+    if any(word in lower for word in _CALM_WORDS):
+        return "calm", "calm"
+    return "serious", "documentary"
+
+
 def _script_narration_sources(script) -> list[dict]:
     if script is None:
         return []
-    blocks = [getattr(script, "hook", "")]
-    blocks.extend(getattr(section, "narration", "") for section in getattr(script, "sections", []))
-    blocks.extend([getattr(script, "conclusion", ""), getattr(script, "call_to_action", "")])
-    sentences = []
-    for block in blocks:
-        sentences.extend(
-            part.strip() for part in __import__("re").split(r"(?<=[.!?])\s+", str(block).strip())
-            if part.strip()
-        )
-    return [
-        {
-            "scene_id": index, "narration": sentence,
-            "voice_emotion": "serious", "music_mood": "restrained_tension",
-            "visual_type": "ai_reconstruction",
-        }
-        for index, sentence in enumerate(sentences, 1)
-    ]
+    sections = list(getattr(script, "sections", []))
+    blocks = [("hook", "Hook", getattr(script, "hook", ""))]
+    blocks.extend((f"section_{s.id}", s.title or f"Section {s.id}", s.narration) for s in sections)
+    blocks.extend([
+        ("conclusion", "Conclusion", getattr(script, "conclusion", "")),
+        ("cta", "Call to action", getattr(script, "call_to_action", "")),
+    ])
+    sources = []
+    scene_id = 0
+    for section_id, section_title, block in blocks:
+        for sentence in __import__("re").split(r"(?<=[.!?])\s+", str(block).strip()):
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+            scene_id += 1
+            voice_emotion, music_mood = _infer_mood(sentence)
+            sources.append({
+                "scene_id": scene_id, "narration": sentence,
+                "section_id": section_id, "section_title": section_title,
+                "section_narration": str(block).strip(),
+                "voice_emotion": voice_emotion, "music_mood": music_mood,
+                "visual_type": "ai_reconstruction",
+            })
+    return sources
 
 
 def _concat_narration(output_dir: Path, paths: list[Path]) -> Path | None:

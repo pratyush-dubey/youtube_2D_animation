@@ -190,4 +190,5 @@ def create_local_voice_provider(voice: VoicePack | None = None) -> VoiceProvider
         or os.getenv("PIPER_MODEL_PATH")
         or getattr(settings, "piper_model_path", "")
     )
-    return PiperLocalVoiceProvider(Path(model) if model else None, os.getenv("PIPER_EXECUTABLE", "piper"))
+    executable = os.getenv("PIPER_EXECUTABLE") or settings.piper_executable
+    return PiperLocalVoiceProvider(Path(model) if model else None, executable)

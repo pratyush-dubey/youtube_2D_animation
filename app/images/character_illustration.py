@@ -133,6 +133,36 @@ def illustrate_character(entry: dict, output_dir: Path, style: str = "") -> dict
             logger.warning("character_illustration_failed", character=name, error=str(exc)[:300])
             return entry
 
+        # One retry with a different seed if the first roll is visibly poor
+        # (low detail/edge quality, not the hard silhouette_shape gate - a
+        # bad silhouette means the crop/composition is wrong regardless of
+        # seed, so retrying it wastes another multi-minute local-diffusion
+        # pass for no reason). ComfyUI's seed used to be a hardcoded literal,
+        # so every attempt for a given character was fully deterministic -
+        # a poor result meant a permanently poor result with no way to
+        # reroll for a better one short of a full pipeline re-run.
+        if hasattr(provider, "seed"):
+            _ensure_min_resolution(raw_master, 1024, 1536)
+            preview_path = raw_master.with_name(f"{raw_master.stem}_gatecheck.png")
+            try:
+                remove_subject_background(raw_master, preview_path)
+                preview_report = evaluate_asset(preview_path, "character")
+            finally:
+                preview_path.unlink(missing_ok=True)
+            if not preview_report.passed and "silhouette_shape" not in preview_report.problems:
+                logger.info(
+                    "character_illustration_retrying_with_new_seed",
+                    character=name, problems=preview_report.problems, score=preview_report.score,
+                )
+                provider.seed += 1
+                try:
+                    if reference.is_file() and provider.supports_references:
+                        provider.generate_variation(prompt, reference, raw_master)
+                    else:
+                        provider.generate_master_character(prompt, raw_master)
+                except Exception as exc:
+                    logger.warning("character_illustration_retry_failed", character=name, error=str(exc)[:300])
+
     _ensure_min_resolution(raw_master, 1024, 1536)
     remove_subject_background(raw_master, master_path)
     report = evaluate_asset(master_path, "character")

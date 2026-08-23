@@ -122,21 +122,30 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         progress_callback: Callable[[str, dict[str, Any]], None] | None = None,
     ):
         from app.image_generation.comfyui_client import ComfyUIClient
-        # pydantic-settings reads .env internally without populating
-        # os.environ, so a plain os.getenv() here never sees .env's
-        # COMFYUI_GENERATION_TIMEOUT_SECONDS - it silently used the 600s
-        # hardcoded fallback below regardless of the configured 900s (or
-        # any other value), which is why reference-conditioned img2img
+        # A real os.environ override (e.g. set for one process/run) still
+        # takes priority, new name first - but pydantic-settings reads .env
+        # internally without populating os.environ, so a bare os.getenv(...,
+        # "600") fallback here never saw .env's COMFYUI_GENERATION_TIMEOUT_
+        # SECONDS. It silently used the 600s hardcoded default regardless of
+        # the configured 900s, which is why reference-conditioned img2img
         # generation (slower than plain text-to-image) kept timing out at
-        # exactly 600s. settings.comfyui_generation_timeout_seconds is the
-        # same value, correctly loaded.
+        # exactly 600s. settings.comfyui_generation_timeout_seconds reads
+        # the same value correctly, so it belongs in the fallback position
+        # os.getenv's own default used to occupy.
+        timeout = os.getenv("COMFYUI_GENERATION_TIMEOUT_SECONDS") or os.getenv("COMFYUI_TIMEOUT_SECONDS")
         self.client = ComfyUIClient(
-            base_url, timeout=settings.comfyui_generation_timeout_seconds,
+            base_url, timeout=int(timeout) if timeout else settings.comfyui_generation_timeout_seconds,
             connect_timeout=settings.comfyui_connect_timeout_seconds,
             poll_interval=settings.comfyui_poll_interval_seconds,
         )
         self.workflow = workflow or Path(__file__).resolve().parents[2] / "workflows" / "character_master.json"
         self.progress_callback = progress_callback
+        # Mutable so a caller can retry with a different seed after a
+        # quality-gate rejection - the seed was previously a literal baked
+        # into _request(), which made every generation for a given
+        # prompt/reference fully deterministic with no way to try for a
+        # better roll (see character_illustration.py's retry loop).
+        self.seed = 19850317
 
     @property
     def configured(self):
@@ -163,7 +172,7 @@ class ComfyUICharacterProvider(CharacterImageProvider):
             return self.client.generate(
                 self.workflow, prompt, output, reference=reference,
                 negative_prompt=negative, width=512, height=768, steps=8,
-                cfg=6.5, seed=19850317, denoise=denoise, progress_callback=self.progress_callback,
+                cfg=6.5, seed=self.seed, denoise=denoise, progress_callback=self.progress_callback,
             )
         except Exception as exc:
             detail = " ".join(str(exc).split())[:2000]
@@ -175,7 +184,17 @@ class ComfyUICharacterProvider(CharacterImageProvider):
     def generate_closeup(self, p, r, o): return self._request(p, o, r, .52)
     def generate_turnaround(self, p, r, o): return self._request(p, o, r, .62)
     def generate_body_parts(self, p, r, o): return self._request(p, o, r, .25)
-    def generate_variation(self, p, r, o): return self._request(p, o, r, .58)
+    # A reference photo is typically head-and-shoulders while the target is a
+    # tall full-body frame (see ComfyUIClient._fit_reference, which now pads
+    # rather than crops to preserve the whole reference); most of the padded
+    # canvas is blank space a body needs to be generated into, which needs
+    # more deviation from the starting latent than a same-composition
+    # denoise would give. Empirically, 0.78 swung too far the other way on
+    # at least one reference (a wind-blown one-leg pose that broke
+    # silhouette_shape entirely, worse than the too-rigid 0.58 bust-only
+    # result it was meant to fix) - 0.68 is a middle ground pending more
+    # data on which end of that tradeoff most references actually need.
+    def generate_variation(self, p, r, o): return self._request(p, o, r, .68)
 
 
 class ImportedCharacterProvider(CharacterImageProvider):

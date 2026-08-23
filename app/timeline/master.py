@@ -90,6 +90,9 @@ def build_master_timeline(
             "start": start,
             "end": end,
             "duration": duration,
+            "section_id": source.get("section_id"),
+            "section_title": source.get("section_title"),
+            "section_narration": source.get("section_narration"),
             "narration_segment": {
                 "start": start, "end": end, "text": text,
                 "audio_path": str(audio_path.resolve()),

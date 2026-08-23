@@ -151,7 +151,30 @@ class ComfyUIClient:
                 if entry.get("outputs"):
                     return entry
             time.sleep(poll_seconds)
+        # Giving up client-side previously left the job running server-side -
+        # ComfyUI processes one job at a time, so every subsequent generation
+        # (including unrelated ones, e.g. the next character) silently queued
+        # behind this abandoned one instead of starting, compounding delays
+        # across an entire run. Best-effort: a cleanup failure shouldn't mask
+        # the real timeout error below.
+        try:
+            self._cancel(prompt_id)
+        except Exception:
+            pass
         raise ComfyUIError(f"Workflow {prompt_id} exceeded {self.timeout}s", prompt_id=prompt_id)
+
+    def _cancel(self, prompt_id: str) -> None:
+        interrupt_request = Request(self.base_url + "/interrupt", data=b"", method="POST")
+        with urlopen(interrupt_request, timeout=self.connect_timeout):
+            pass
+        delete_request = Request(
+            self.base_url + "/queue",
+            data=json.dumps({"delete": [prompt_id]}).encode("utf-8"),
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urlopen(delete_request, timeout=self.connect_timeout):
+            pass
 
     def download_image(self, image_info: dict, output: Path) -> Path:
         query = urlencode({k: image_info[k] for k in ("filename", "subfolder", "type") if k in image_info})
@@ -178,7 +201,18 @@ class ComfyUIClient:
         """
         from PIL import Image, ImageOps
 
-        fitted = ImageOps.fit(Image.open(reference).convert("RGB"), (width, height), method=Image.Resampling.LANCZOS)
+        # pad, not fit/crop: most identity references are head-and-shoulders
+        # portraits, much closer to square than the tall full-body target.
+        # Cropping to fill would keep zooming into the face and discarding
+        # the target's own extra height - which is exactly backwards, since
+        # that extra height is where the body needs to be generated. Padding
+        # keeps the whole reference intact and top-anchored, leaving blank
+        # space below for img2img to actually fill in a body instead of
+        # just re-painting a tightly cropped bust shot at a taller canvas.
+        fitted = ImageOps.pad(
+            Image.open(reference).convert("RGB"), (width, height),
+            method=Image.Resampling.LANCZOS, color=(255, 255, 255), centering=(0.5, 0.0),
+        )
         fitted_path = reference.with_name(f"{reference.stem}_fit_{width}x{height}.png")
         fitted.save(fitted_path, "PNG")
         return fitted_path

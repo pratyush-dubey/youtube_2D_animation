@@ -14,7 +14,11 @@
     "serious": {"speed": 0.96, "pitch": -2.0},
     "dramatic": {"speed": 0.93, "pitch": -2.0},
     "tense": {"speed": 0.97, "pitch": 0.0},
-    "reflective": {"speed": 0.92, "pitch": -2.0}
+    "reflective": {"speed": 0.92, "pitch": -2.0},
+    "eerie": {"speed": 0.90, "pitch": -2.0},
+    "uplifting": {"speed": 1.05, "pitch": 2.0},
+    "hopeful": {"speed": 1.01, "pitch": 1.5},
+    "mysterious": {"speed": 0.91, "pitch": -2.0}
   },
   "style": "documentary",
   "sample_reference": null,

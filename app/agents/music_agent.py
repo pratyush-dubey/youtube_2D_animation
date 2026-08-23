@@ -39,7 +39,7 @@ _CC0_TRACKS = [
         "source": "pixabay.com",
         "commercial_use": True,
         "attribution_required": False,
-        "mood": ["calm", "documentary", "curious"],
+        "mood": ["calm", "documentary", "curious", "serious", "reflective"],
     },
     {
         "file": "mysterious_ambient_02.mp3",
@@ -49,7 +49,7 @@ _CC0_TRACKS = [
         "source": "pixabay.com",
         "commercial_use": True,
         "attribution_required": False,
-        "mood": ["mysterious", "dramatic", "tense"],
+        "mood": ["mysterious", "dramatic", "tense", "restrained_tension", "eerie"],
     },
     {
         "file": "space_ambient_03.mp3",
@@ -59,7 +59,7 @@ _CC0_TRACKS = [
         "source": "pixabay.com",
         "commercial_use": True,
         "attribution_required": False,
-        "mood": ["epic", "cinematic", "space"],
+        "mood": ["epic", "cinematic", "space", "uplifting", "hopeful"],
     },
 ]
 
@@ -80,14 +80,23 @@ class MusicAgent(Agent):
             logger.info("music_selected_local", path=str(track), mood=mood)
             return context.music_path
 
-        # 2. Download a CC0 track
+        # 2. Download a CC0 track matching this video's actual mood
         track = self._download_cc0(mood)
         if track:
             context.music_path = track
             logger.info("music_downloaded", path=str(track), mood=mood)
             return context.music_path
 
-        # 3. Silent fallback — generates a silent MP3 so the compositor
+        # 3. Last resort: any previously downloaded, licensed track (e.g. no
+        #    internet for the mood-matched download above) - better than no
+        #    music, but the mood mismatch is real, so it's logged as such.
+        track = self._find_any_local()
+        if track:
+            context.music_path = Path(track)
+            logger.warning("music_selected_mood_mismatch_fallback", path=str(track), mood=mood)
+            return context.music_path
+
+        # 4. Silent fallback — generates a silent MP3 so the compositor
         #    always has something to work with (no loud silence gaps)
         context.warnings.append(
             "Licensed music is unavailable; import an approved track before final mixing"
@@ -105,6 +114,14 @@ class MusicAgent(Agent):
         return max(moods, key=moods.get) if moods else "calm"
 
     def _find_local(self, mood: str) -> str | None:
+        """Mood-matched local track only. A mood-blind fallback used to live
+        here, returning literally any downloaded track when nothing matched
+        - which meant it always "succeeded" and _download_cc0() (the thing
+        that actually fetches a mood-appropriate track) was never reached.
+        Every video ended up with whichever track happened to be cached
+        first, regardless of its own mood. See _find_any_local() for the
+        real last-resort, now ordered after the mood-matched download
+        attempt instead of before it."""
         if not _META_FILE.exists():
             return None
         try:
@@ -118,11 +135,22 @@ class MusicAgent(Agent):
             and (_MUSIC_DIR / t["file"]).exists()
             and (_MUSIC_DIR / t["file"]).stat().st_size > 10_000
         ]
-        if matches:
-            return str(_MUSIC_DIR / random.choice(matches)["file"])
+        return str(_MUSIC_DIR / random.choice(matches)["file"]) if matches else None
+
+    def _find_any_local(self) -> str | None:
+        """Absolute last resort - any previously downloaded, licensed track,
+        used only after both a mood-matched local track and a fresh
+        mood-matched CC0 download have failed (e.g. no internet)."""
+        if not _META_FILE.exists():
+            return None
+        try:
+            tracks = json.loads(_META_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return None
         available = [
             t for t in tracks
-            if (_MUSIC_DIR / t["file"]).exists()
+            if t.get("commercial_use")
+            and (_MUSIC_DIR / t["file"]).exists()
             and (_MUSIC_DIR / t["file"]).stat().st_size > 10_000
         ]
         return str(_MUSIC_DIR / available[0]["file"]) if available else None
