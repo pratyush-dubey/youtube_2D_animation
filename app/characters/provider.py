@@ -171,7 +171,13 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         try:
             return self.client.generate(
                 self.workflow, prompt, output, reference=reference,
-                negative_prompt=negative, width=512, height=768, steps=8,
+                # 12 steps, not 8: this exact config (DreamShaper_8, dpmpp_2m,
+                # karras, cfg 6.5, 12 steps - see
+                # output/character_generation_test/generation_manifest.json)
+                # produced clean, well-proportioned illustrated characters.
+                # 8 steps trades away visible quality for less CPU time on a
+                # generation that already takes several minutes either way.
+                negative_prompt=negative, width=512, height=768, steps=12,
                 cfg=6.5, seed=self.seed, denoise=denoise, progress_callback=self.progress_callback,
             )
         except Exception as exc:

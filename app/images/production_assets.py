@@ -274,12 +274,25 @@ def remove_subject_background(source_path: Path, output_path: Path) -> Path:
     segmentation model has no such blind spot: it identifies the person as a
     subject regardless of how their clothing's color relates to the backdrop.
     """
-    from rembg import remove
-
     source = Image.open(source_path).convert("RGB")
-    result = remove(source, session=_rembg_session())
+    pixels = np.asarray(source, dtype=np.uint8)
+    border = np.concatenate((pixels[0], pixels[-1], pixels[:, 0], pixels[:, -1]))
+    neutral_bright = ((border.max(axis=1)-border.min(axis=1) <= 18)
+                      & (border.min(axis=1) >= 214))
+    if float(neutral_bright.mean()) >= .80:
+        # Studio white/checker backgrounds have a safe deterministic fast path.
+        spread = pixels.max(axis=2).astype(np.int16)-pixels.min(axis=2).astype(np.int16)
+        candidate = ((spread <= 18) & (pixels.min(axis=2) >= 214)).astype(np.uint8)
+        count, labels = cv2.connectedComponents(candidate, connectivity=8)
+        edge_labels = np.unique(np.concatenate((labels[0], labels[-1], labels[:, 0], labels[:, -1])))
+        background = np.isin(labels, edge_labels[edge_labels != 0]) if count > 1 else np.zeros(labels.shape, bool)
+        result = source.convert("RGBA")
+        result.putalpha(Image.fromarray(np.where(background, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.1)))
+    else:
+        from rembg import remove
+        result = remove(source, session=_rembg_session())
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    result.save(output_path, "PNG", optimize=True)
+    result.save(output_path, "PNG", compress_level=1)
     return output_path
 
 
@@ -410,7 +423,8 @@ def extract_character_rig(reference_path: Path, output_dir: Path) -> Path:
     # left/right labels describe the viewer-facing artwork, matching filenames.
     joint_norm = {
         "hips": (.50, .565), "spine": (.50, .40), "chest": (.50, .275),
-        "neck": (.50, .215), "head": (.50, .185), "mouth": (.50, .162),
+        "neck": (.50, .215), "head": (.50, .185), "hair": (.50, .045),
+        "eyes": (.50, .105), "eyebrows": (.50, .082), "mouth": (.50, .162),
         "shoulder_l": (.355, .275), "elbow_l": (.300, .425), "wrist_l": (.265, .555),
         "shoulder_r": (.645, .275), "elbow_r": (.700, .425), "wrist_r": (.735, .555),
         "hip_l": (.445, .565), "knee_l": (.425, .755), "ankle_l": (.405, .905), "toe_l": (.345, .955),
@@ -450,10 +464,10 @@ def extract_character_rig(reference_path: Path, output_dir: Path) -> Path:
     for name, mask in masks.items():
         # Slight overlap hides cut seams during restrained joint rotation while
         # retaining the source illustration's outer alpha silhouette.
-        # Generous source-pixel overlap forms painted joint gussets. Without it,
-        # rotating two perfectly abutting masks exposes transparent wedges at
-        # shoulders, knees and elbows even though the skeleton is connected.
-        dilated = cv2.dilate(np.asarray(mask), np.ones((31, 31), np.uint8), iterations=1)
+        # A small overlap supports manual cutout correction. Beauty rendering
+        # uses continuous skeletal skinning, so expensive giant dilations are
+        # unnecessary and previously made segmentation look stalled.
+        dilated = cv2.dilate(np.asarray(mask), np.ones((7, 7), np.uint8), iterations=1)
         mask = ImageChops.darker(Image.fromarray(dilated), alpha)
         part_bbox = mask.getbbox()
         if not part_bbox:
@@ -462,7 +476,9 @@ def extract_character_rig(reference_path: Path, output_dir: Path) -> Path:
         layer.putalpha(mask)
         cropped = layer.crop(part_bbox)
         path = output_dir / f"{name}.png"
-        cropped.save(path, "PNG", optimize=True)
+        # Rig layers are intermediates; expensive maximum PNG optimization was
+        # making this stage appear hung on normal 1K character sheets.
+        cropped.save(path, "PNG", compress_level=1)
         manifest["parts"][name] = {
             "path": str(path.resolve()),
             "position": [part_bbox[0], part_bbox[1]],

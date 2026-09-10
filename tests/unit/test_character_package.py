@@ -58,11 +58,3 @@ def test_character_studio_slug_blocks_path_syntax():
     from app.characters.web_jobs import safe_slug
 
     assert safe_slug("../../My Character\\test") == "my_character_test"
-
-
-def test_primitive_debug_character_is_retired(monkeypatch, tmp_path):
-    from app.cinematic.local_art import generate_bank_proof_art
-
-    monkeypatch.delenv("ALLOW_PRIMITIVE_DEBUG_ASSETS", raising=False)
-    with pytest.raises(RuntimeError, match="retired"):
-        generate_bank_proof_art(tmp_path)

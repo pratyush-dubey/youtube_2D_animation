@@ -181,6 +181,12 @@ class VideoEditAgent(Agent):
             except Exception:
                 pass
 
+        if settings.render_provider == "veo":
+            sfx_path = self._create_sfx(context.output_dir, scene)
+            return self._build_veo_scene_clip(
+                scene, img_path, audio_path, sfx_path, out, duration, context.aspect_ratio
+            )
+
         # Every scene is upgraded to an editable scene graph before rendering.
         # The frame renderer provides camera, parallax, articulated character,
         # atmosphere, and lighting motion; FFmpeg remains the final encoder.
@@ -211,8 +217,8 @@ class VideoEditAgent(Agent):
                 quality=str(scene.get("render_quality") or settings.render_quality),
             )
         except Exception as exc:
-            # A failed generated asset degrades to a fully animated procedural
-            # environment. It never degrades to a held still image.
+            # Local modes may retry their own procedural renderer. Veo branches
+            # above and never enters this fallback.
             logger.warning("animated_asset_render_failed_retrying_procedural", scene=scene_id, error=str(exc)[-300:])
             scene["render_mode"] = "PROCEDURAL_ANIMATION"
             context.warnings.append(
@@ -226,6 +232,87 @@ class VideoEditAgent(Agent):
                 quality=str(scene.get("render_quality") or settings.render_quality),
             )
 
+    def _build_veo_scene_clip(
+        self, scene: dict, image_path: Path | None, narration_path: Path | None,
+        sfx_path: Path | None, output_path: Path, duration: float, aspect_ratio: str,
+    ) -> Path:
+        """Generate one physically animated shot and lock it to master audio."""
+        if not image_path or not image_path.is_file():
+            raise RuntimeError(f"Veo scene {scene['scene_id']} requires an approved first-frame image")
+        if duration > 8.001:
+            raise RuntimeError(
+                f"Veo scene {scene['scene_id']} is {duration:.3f}s; split it into <=8s action beats"
+            )
+        requested = 4 if duration <= 4 else (6 if duration <= 6 else 8)
+        prompt = _veo_motion_prompt(scene, duration)
+        raw_path = output_path.with_name(f"{output_path.stem}.veo_raw.mp4")
+        manifest_path = raw_path.with_suffix(".json")
+        source_key = hashlib.sha256(
+            image_path.read_bytes() + prompt.encode("utf-8")
+            + f"{settings.veo_model}|{requested}|{settings.veo_resolution}".encode("utf-8")
+        ).hexdigest()
+        cached = False
+        if raw_path.is_file() and manifest_path.is_file():
+            try:
+                cached = json.loads(manifest_path.read_text(encoding="utf-8")).get("source_key") == source_key
+            except (OSError, ValueError):
+                cached = False
+        if not cached:
+            from app.video.veo_provider import VeoVideoProvider
+            provider = VeoVideoProvider(model=settings.veo_model)
+            provider.generate_from_image(
+                prompt, image_path, raw_path,
+                duration_seconds=requested,
+                aspect_ratio=str(aspect_ratio or "16:9"),
+                resolution=settings.veo_resolution,
+                generate_audio=settings.veo_generate_audio,
+                negative_prompt=(
+                    "static image, frozen pose, slideshow, Ken Burns, camera-only motion, "
+                    "rigid character translation, foot sliding, floating feet, morphing face, "
+                    "extra limbs, broken anatomy, teleporting, jump cut, text, watermark"
+                ),
+                seed=19850000 + int(scene["scene_id"]),
+            )
+            manifest_path.write_text(json.dumps({
+                "source_key": source_key, "provider": "veo", "model": settings.veo_model,
+                "generated_duration": requested, "target_duration": duration,
+                "source_image": str(image_path.resolve()), "prompt": prompt,
+            }, indent=2), encoding="utf-8")
+        self._conform_generated_clip(raw_path, narration_path, sfx_path, output_path, duration)
+        return output_path
+
+    def _conform_generated_clip(
+        self, raw_path: Path, narration_path: Path | None, sfx_path: Path | None,
+        output_path: Path, duration: float,
+    ) -> None:
+        inputs = ["-i", str(raw_path)]
+        if narration_path and narration_path.is_file():
+            inputs += ["-i", str(narration_path)]
+        else:
+            inputs += ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
+        has_sfx = bool(sfx_path and sfx_path.is_file())
+        if has_sfx:
+            inputs += ["-i", str(sfx_path)]
+        width, height = getattr(self, "render_width", W), getattr(self, "render_height", H)
+        filters = [
+            f"[0:v]trim=duration={duration:.6f},setpts=PTS-STARTPTS,fps=24,"
+            f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height}[v]",
+            f"[1:a]apad,atrim=duration={duration:.6f}[narr]",
+        ]
+        audio_map = "[narr]"
+        if has_sfx:
+            filters += [
+                f"[2:a]volume=.58,apad,atrim=duration={duration:.6f}[sfx]",
+                "[narr][sfx]amix=inputs=2:duration=first:dropout_transition=0[aout]",
+            ]
+            audio_map = "[aout]"
+        _ffmpeg(
+            *inputs, "-filter_complex", ";".join(filters), "-map", "[v]", "-map", audio_map,
+            "-c:v", settings.video_codec, "-preset", settings.video_preset,
+            "-crf", str(settings.video_crf), "-pix_fmt", "yuv420p",
+            "-c:a", settings.audio_codec, "-t", f"{duration:.6f}", str(output_path),
+        )
     # ── concat ─────────────────────────────────────────────────────────────
 
     def _concat_clips(
@@ -536,9 +623,44 @@ _SFX_FILTERS = {
 }
 
 
+def _veo_motion_prompt(scene: dict, duration: float) -> str:
+    """Translate a timed shot into physical-performance language for Veo."""
+    shots = scene.get("shots") or [{}]
+    beats = []
+    for shot in shots:
+        start = float(shot.get("start", 0.0))
+        end = start + float(shot.get("duration", duration))
+        action = str(shot.get("action") or scene.get("character_action") or "react")
+        camera = shot.get("camera") or "static"
+        camera_move = camera.get("move", "static") if isinstance(camera, dict) else camera
+        beats.append(
+            f"{start:.2f}-{min(end, duration):.2f}s: the character physically performs {action}; "
+            f"camera {camera_move}"
+        )
+    environment = str(scene.get("environment") or scene.get("visual_description") or "the established environment")
+    return (
+        "Animate the supplied image as one continuous cinematic documentary shot at 24 fps. "
+        "Preserve the exact person identity, face, clothing, art style, architecture, lighting, "
+        "and spatial layout from the first frame. "
+        + " ".join(beats)
+        + f" The performance lasts {duration:.2f} seconds. Every action must be visibly executed "
+          "with articulated shoulders, elbows, wrists, hips, knees, ankles, torso, head, balance, "
+          "weight transfer, contact, follow-through, and natural acceleration/deceleration. Walking "
+          "requires alternating legs and opposing arm swing, planted-foot contact, bent knees, and no "
+          "foot skating. Reaching requires the hand to travel to and contact the real prop. "
+        + f"Environment: {environment}. Add restrained independent environmental motion appropriate "
+          "to the scene (people, vehicles, foliage, fabric, dust, reflections, shadows or practical "
+          "effects) while maintaining continuity. Camera motion supports the action but is not the "
+          "only movement. No cuts, no montage, no pose morph, no newly appearing objects."
+    )
+
+
 def _render_key(context: AgentContext) -> str:
     payload: dict[str, Any] = {
         "version": 10,
+        "render_provider": settings.render_provider,
+        "veo_model": settings.veo_model if settings.render_provider == "veo" else None,
+        "veo_resolution": settings.veo_resolution if settings.render_provider == "veo" else None,
         "storyboard": context.storyboard,
         "master_timeline": context.master_timeline,
         "fps": FPS,

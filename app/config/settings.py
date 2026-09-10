@@ -119,7 +119,14 @@ class Settings(BaseSettings):
     ffmpeg_path: str = "ffmpeg"
     ffprobe_path: str = "ffprobe"
     blender_path: str = ""
-    render_provider: Literal["cinematic_2d25d", "blender", "illustrated_2d"] = "cinematic_2d25d"
+    render_provider: Literal["cinematic_2d25d", "blender", "illustrated_2d", "veo"] = "cinematic_2d25d"
+    # Cloud video is opt-in because every successful Veo clip is billable.
+    # ``render_provider=veo`` is the explicit opt-in; there is no automatic
+    # local fallback because a moving cutout is not equivalent output.
+    veo_model: str = "veo-3.1-lite-generate-preview"
+    veo_resolution: Literal["720p", "1080p"] = "720p"
+    veo_generate_audio: bool = False
+    veo_enhance_prompt: bool = True
     art_style_preset: str = "CINEMATIC_ILLUSTRATED_DOCUMENTARY"
     character_3d_provider: Literal["blocked", "local", "mpfb"] = "blocked"
     local_character_model: str = ""

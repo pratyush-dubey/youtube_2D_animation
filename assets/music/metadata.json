@@ -12,5 +12,21 @@
       "dramatic",
       "tense"
     ]
+  },
+  {
+    "file": "ambient_documentary_01.mp3",
+    "url": "https://cdn.pixabay.com/download/audio/2022/01/18/audio_d0a13f69d2.mp3",
+    "license": "Pixabay License",
+    "author": "Pixabay",
+    "source": "pixabay.com",
+    "commercial_use": true,
+    "attribution_required": false,
+    "mood": [
+      "calm",
+      "documentary",
+      "curious",
+      "serious",
+      "reflective"
+    ]
   }
 ]

@@ -138,10 +138,17 @@ class IllustratedCharacterRig:
                 lift = max(0.0, local) * 22.0
                 foot_targets[side] = ((base[0] + sign*local*32.0)*scale + root_x, base[1]*scale - lift*scale + root_y)
         elif action in {"look_around", "look_left", "look_right", "turn_head", "scan"}:
+            # Amplitudes here used to be small enough (10deg head, 1.5px root
+            # bob) to read as almost no motion at all on a 720p+ frame, which
+            # mattered a lot because this is the fallback branch for most
+            # expository/reflective narration - i.e. most of a documentary
+            # script. Widened so a "look around" beat is actually visible
+            # instead of only technically non-zero.
             wave = math.sin(_smooth(progress) * math.tau - math.pi/2)
-            angles["head"] = 10.0 * wave + head_turn * 3.0
-            angles["neck"] = 2.5 * wave
-            root_y = math.sin(progress * math.pi) * -1.5 * scale
+            angles["head"] = 16.0 * wave + head_turn * 5.0
+            angles["neck"] = 4.0 * wave
+            angles["torso"] = 2.0 * wave
+            root_y = math.sin(progress * math.pi) * -2.5 * scale
         elif action in {"open_door", "close_door", "interact", "pick_up_object", "reach"}:
             reach = _smooth(min(1.0, progress * 1.35))
             angles.update({"torso": -3.5*reach, "right_upper_arm": -48*reach,
@@ -153,9 +160,14 @@ class IllustratedCharacterRig:
             angles.update({"torso": 2.4*settle, "left_upper_leg": -4*settle,
                            "right_upper_leg": 4*settle, "head": -1.8*settle})
         else:
+            # Default idle (e.g. "react"/"nod"/"point" beats): same reasoning
+            # as look_around above - a barely-there breathing sway read as a
+            # static held frame. Kept slow (same phase*.35 cadence) so it
+            # still reads as idle rather than nervous, just with amplitude
+            # that actually shows up on screen.
             breath = math.sin(phase * .35)
-            root_y = -1.4 * breath * scale
-            angles.update({"torso": .5*breath, "head": -.35*breath})
+            root_y = -2.6 * breath * scale
+            angles.update({"torso": 1.1*breath, "head": -.8*breath, "neck": -.4*breath})
         matrices = self._part_matrices(angles, (root_x, root_y), scale)
         joints = {}
         for name, point in self.joints.items():

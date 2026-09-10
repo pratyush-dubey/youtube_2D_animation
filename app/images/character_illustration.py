@@ -85,7 +85,7 @@ def _passes_quality_gate(raw_master: Path) -> bool:
         scratch.unlink(missing_ok=True)
 
 
-def illustrate_character(entry: dict, output_dir: Path, style: str = "") -> dict:
+def illustrate_character(entry: dict, output_dir: Path, style: str = "", char_dir: Path | None = None) -> dict:
     """Populate entry with illustrated_reference / rig_manifest / expressions.
 
     Idempotent across resumes: if a rig already exists on disk for this
@@ -93,11 +93,15 @@ def illustrate_character(entry: dict, output_dir: Path, style: str = "") -> dict
     configured, generation error, quality gate rejection) leaves entry
     unchanged so the caller falls back to today's behaviour rather than
     crashing character setup for an unrelated provider outage.
+
+    `char_dir` lets a caller outside the per-project pipeline (e.g. the
+    persistent characters/ library) choose exactly where the character's
+    files live instead of always nesting under `output_dir/characters/<slug>`.
     """
     name = str(entry.get("name") or "").strip()
     character_id = str(entry.get("character_id") or name or "character")
     slug = _slug(character_id)
-    char_dir = output_dir / "characters" / slug
+    char_dir = char_dir or (output_dir / "characters" / slug)
     rig_path = char_dir / "rig" / "rig.json"
     master_path = char_dir / "master.png"
 

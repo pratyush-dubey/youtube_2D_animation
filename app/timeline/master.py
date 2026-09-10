@@ -261,7 +261,7 @@ def _environment_motions(environment: str) -> list[str]:
         return ["traffic_pass", "pedestrian_walk", "shop_fan_rotate", "light_flicker"]
     if "bank" in lower or "room" in lower:
         return ["ceiling_fan_rotate", "papers_shift", "background_people_move"]
-    return ["depth_parallax", "atmosphere_drift"]
+    return ["background_parallax", "atmosphere_drift"]
 
 
 def _sfx_for(actions: list[str], environment: str) -> list[str]:

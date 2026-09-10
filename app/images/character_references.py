@@ -81,26 +81,24 @@ def resolve_wikimedia_portrait(name: str, output_dir: Path) -> dict | None:
     page = pages[0]
     image_name = str(page.get("pageimage", "")).strip()
     if not image_name:
-        return None
+        # The pageimages extension doesn't recognize every article's infobox
+        # image (template/heuristic dependent) even when one clearly exists -
+        # confirmed on R. N. Kao's own article, which has a portrait but no
+        # `pageimage` in this response. The page-summary REST endpoint reads
+        # the lead image directly instead of relying on that extension, so
+        # it succeeds here where the prop above returns nothing.
+        image_name = _rest_summary_image_name(str(page.get("title", name)))
+        if not image_name:
+            return None
 
-    commons = _api_json(
-        _COMMONS_API,
-        {
-            "action": "query",
-            "format": "json",
-            "titles": f"File:{image_name}",
-            "prop": "imageinfo",
-            "iiprop": "url|mime|extmetadata",
-            "iiurlwidth": "1200",
-        },
-    )
-    commons_pages = list(commons.get("query", {}).get("pages", {}).values())
-    if not commons_pages:
+    info = _lookup_imageinfo(image_name)
+    if info is None:
+        # Also confirmed on R. N. Kao: this exact portrait is a non-free,
+        # locally-hosted file on en.wikipedia.org, not mirrored to Commons at
+        # all (typical for fair-use portraits of deceased officials, which
+        # Commons' free-license policy excludes) - _lookup_imageinfo already
+        # tries both, so a None here means truly neither has it.
         return None
-    info_list = commons_pages[0].get("imageinfo", [])
-    if not info_list:
-        return None
-    info = info_list[0]
     mime = str(info.get("mime", ""))
     if mime not in {"image/jpeg", "image/png", "image/webp"}:
         return None
@@ -165,6 +163,60 @@ def create_reference_scene(reference_path: Path, output_path: Path) -> Path:
     background.alpha_composite(card, (960 - card.width // 2, 80))
     background.convert("RGB").save(output_path, "JPEG", quality=93)
     return output_path
+
+
+def _rest_summary_image_name(title: str) -> str | None:
+    """Read the lead-section image straight off Wikipedia's page-summary API.
+
+    More reliable than the `pageimages` prop for articles whose infobox
+    template or image isn't picked up by that extension's heuristics.
+    """
+    try:
+        encoded = urllib.parse.quote(title.replace(" ", "_"), safe="")
+        request = urllib.request.Request(
+            f"https://en.wikipedia.org/api/rest_v1/page/summary/{encoded}",
+            headers={"User-Agent": _USER_AGENT},
+        )
+        with urllib.request.urlopen(request, timeout=25) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return None
+    source = str((data.get("originalimage") or data.get("thumbnail") or {}).get("source") or "")
+    if not source:
+        return None
+    return urllib.parse.unquote(source.rsplit("/", 1)[-1].split("?", 1)[0]) or None
+
+
+def _lookup_imageinfo(image_name: str) -> dict | None:
+    """Look up a File: page's imageinfo, trying Commons then local Wikipedia.
+
+    Free-licensed images live on Commons; non-free fair-use portraits (common
+    for deceased officials, who Commons' free-license policy excludes) are
+    hosted locally on en.wikipedia.org instead. Checking only Commons misses
+    every image in that second category even when the article clearly has one.
+    """
+    for endpoint in (_COMMONS_API, _WIKIPEDIA_API):
+        try:
+            data = _api_json(
+                endpoint,
+                {
+                    "action": "query",
+                    "format": "json",
+                    "titles": f"File:{image_name}",
+                    "prop": "imageinfo",
+                    "iiprop": "url|mime|extmetadata",
+                    "iiurlwidth": "1200",
+                },
+            )
+        except Exception:
+            continue
+        pages = list(data.get("query", {}).get("pages", {}).values())
+        if not pages or pages[0].get("missing") is not None:
+            continue
+        info_list = pages[0].get("imageinfo", [])
+        if info_list:
+            return info_list[0]
+    return None
 
 
 def _api_json(endpoint: str, params: dict[str, str]) -> dict:

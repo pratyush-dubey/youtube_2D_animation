@@ -263,26 +263,6 @@ Visual quality levels:
 - `DRAFT`: illustrated assets with layered parallax preparation
 - `PRODUCTION`: illustrated assets, an 80-point quality gate, lighting, texture, rigging, and grading
 
-Plan the six-shot, 30-second bank acceptance test with:
-
-```powershell
-python tools/run_cinematic_bank_proof.py --plan-only
-```
-
-The command writes centralized art direction, a fictional-character bible, six distinct
-shot prompts, and an acceptance report under `output/cinematic_bank_proof/`. A production
-run uses `python tools/run_cinematic_bank_proof.py`. When no suitable image backend is
-configured it stops with `Image generation provider is not configured.` It never replaces
-missing artwork with gradients, vector people, procedural mannequins, or reused full-body art.
-
-Primary cinematic image configuration:
-
-```env
-RENDER_PROVIDER=cinematic_2d25d
-CINEMATIC_IMAGE_PROVIDER=unconfigured # automatic1111 | gemini_image | unconfigured
-ZERO_COST_MODE=true
-```
-
 ### Production illustrated-character gate
 
 Character art is a separate, stricter gate. Run it before any animation:

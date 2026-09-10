@@ -8,7 +8,10 @@ from pathlib import Path
 import bpy
 
 args = sys.argv[sys.argv.index("--") + 1:]
-out_path = args[args.index("--out") + 1]
+# A bare relative path here does not resolve against the invoking shell's
+# cwd - Blender wrote it under the filesystem root (e.g. C:\characters\...)
+# instead of the actual project directory. Resolve to absolute first.
+out_path = str(Path(args[args.index("--out") + 1]).resolve())
 
 scene = bpy.context.scene
 scene.render.engine = "BLENDER_EEVEE_NEXT" if "BLENDER_EEVEE_NEXT" in [e.identifier for e in bpy.types.RenderSettings.bl_rna.properties["engine"].enum_items] else "BLENDER_EEVEE"

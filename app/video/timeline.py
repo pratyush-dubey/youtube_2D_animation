@@ -171,6 +171,18 @@ def _shot(
         "subject": supplied.get("subject") or scene.get("visual_description", "story subject"),
         "transition": transition,
         "character_position": character_position,
+        # Preserved so VideoEditAgent._concat_clips can detect an exact,
+        # single-master-clock production (see its exact_master_clock check)
+        # and join scenes with a lossless hard cut instead of a ~0.45s
+        # crossfade. Without this, every scene's shots get rebuilt here
+        # right before rendering and master_start/master_end silently
+        # disappeared, so exact_master_clock was never true for any real
+        # video - every scene boundary crossfaded together and trimmed audio
+        # out of both scenes it joined, which on a narration track means the
+        # tail of one line dissolving into the start of the next: audible
+        # clipping/garbling at every single cut, not just an occasional glitch.
+        "master_start": supplied.get("master_start"),
+        "master_end": supplied.get("master_end"),
     }
 
 

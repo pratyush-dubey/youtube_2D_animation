@@ -1,0 +1,17 @@
+=== illustrating Rameshwar Nath Kao ===
+2026-08-27 00:38:22 [warning  ] character_illustration_pollinations_attempt_failed attempt=kontext character='Rameshwar Nath Kao' error='HTTP Error 500: Internal Server Error'
+2026-08-27 00:38:22 [info     ] CHARACTER_GENERATION_REQUEST   method=POST stage=comfyui_submission url=http://127.0.0.1:8188/prompt
+2026-08-27 00:51:50 [info     ] CHARACTER_GENERATION_RESPONSE  generation_time=807.237 output=C:\Users\Lenovo\OneDrive\Documents\GitHub\FastFoodDelivery\zomato_clone-master\youtube_2D_animation\output\5f5dd4e7\characters\rameshwar-nath-kao-2529f2f7\master_raw.png prompt_id=b417c6ed-1ffb-4553-b00e-3f4a97feaecd stage=comfyui
+2026-08-27 00:52:19 [warning  ] character_illustration_rejected character='Rameshwar Nath Kao' problems=['edge_detail', 'silhouette_shape']
+Rameshwar Nath Kao: rig_manifest=MISSING
+=== illustrating Indira Gandhi ===
+2026-08-27 00:52:27 [warning  ] character_illustration_pollinations_attempt_failed attempt=kontext character='Indira Gandhi' error='HTTP Error 500: Internal Server Error'
+2026-08-27 00:52:28 [info     ] CHARACTER_GENERATION_REQUEST   method=POST stage=comfyui_submission url=http://127.0.0.1:8188/prompt
+2026-08-27 01:07:30 [warning  ] character_illustration_failed  character='Indira Gandhi' error='Local diffusion generation failed. No substitute character was generated. ComfyUI error: Workflow 97290b4f-38ab-4140-a4c5-b525c716f074 exceeded 900s'
+Indira Gandhi: rig_manifest=MISSING
+=== illustrating Sankaran Nair ===
+2026-08-27 01:07:38 [warning  ] character_illustration_pollinations_attempt_failed attempt=kontext character='Sankaran Nair' error='HTTP Error 500: Internal Server Error'
+2026-08-27 01:07:39 [info     ] CHARACTER_GENERATION_REQUEST   method=POST stage=comfyui_submission url=http://127.0.0.1:8188/prompt
+2026-08-27 01:22:41 [warning  ] character_illustration_failed  character='Sankaran Nair' error='Local diffusion generation failed. No substitute character was generated. ComfyUI error: Workflow 315a451d-820f-4f4e-83a5-becded967bfb exceeded 900s'
+Sankaran Nair: rig_manifest=MISSING
+DONE

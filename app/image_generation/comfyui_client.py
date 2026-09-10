@@ -209,9 +209,20 @@ class ComfyUIClient:
         # keeps the whole reference intact and top-anchored, leaving blank
         # space below for img2img to actually fill in a body instead of
         # just re-painting a tightly cropped bust shot at a taller canvas.
+        #
+        # Pad color is deliberately NOT white: the master-character prompt
+        # itself always asks for "solid pure white seamless background", so
+        # a white-padded canvas gave img2img zero visual signal that the
+        # lower region was unfinished padding rather than already-finished
+        # background - confirmed live on two separate real characters
+        # (Einstein, Rameshwar Nath Kao), both producing a clean portrait
+        # bust with a hard, untouched white rectangle below it, rejected by
+        # the silhouette_shape gate every time. A neutral mid-grey reads as
+        # "canvas to fill" instead of "matches the requested background",
+        # which img2img actually paints over.
         fitted = ImageOps.pad(
             Image.open(reference).convert("RGB"), (width, height),
-            method=Image.Resampling.LANCZOS, color=(255, 255, 255), centering=(0.5, 0.0),
+            method=Image.Resampling.LANCZOS, color=(128, 128, 128), centering=(0.5, 0.0),
         )
         fitted_path = reference.with_name(f"{reference.stem}_fit_{width}x{height}.png")
         fitted.save(fitted_path, "PNG")

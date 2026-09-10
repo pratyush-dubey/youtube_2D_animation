@@ -1,0 +1,7 @@
+=== retrying Kao with grey-padding fix ===
+2026-08-27 02:29:41 [warning  ] character_illustration_pollinations_attempt_failed attempt=kontext character='Rameshwar Nath Kao' error='HTTP Error 500: Internal Server Error'
+2026-08-27 02:29:42 [info     ] CHARACTER_GENERATION_REQUEST   method=POST stage=comfyui_submission url=http://127.0.0.1:8188/prompt
+2026-08-27 02:37:12 [info     ] CHARACTER_GENERATION_RESPONSE  generation_time=450.332 output=C:\Users\Lenovo\OneDrive\Documents\GitHub\FastFoodDelivery\zomato_clone-master\youtube_2D_animation\output\5f5dd4e7\characters\rameshwar-nath-kao-2529f2f7\master_raw.png prompt_id=920fce08-31d3-42d2-be04-e3ca5b715c90 stage=comfyui
+2026-08-27 02:37:26 [warning  ] character_illustration_rejected character='Rameshwar Nath Kao' problems=['edge_detail', 'silhouette_shape']
+rig_manifest: MISSING
+DONE

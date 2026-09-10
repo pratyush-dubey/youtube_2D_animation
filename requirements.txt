@@ -19,8 +19,18 @@ httpx>=0.27.0
 
 # LLM providers (install only what you use)
 # openai>=1.35.0     # pip install openai
-google-genai>=1.0,<1.1
-google-auth<2.42
+# 1.0 had no video-generation (Veo) support at all - types.GenerateVideosConfig
+# and the image= param on generate_videos() were both added later. Upgraded to
+# use Veo 3 (app/video/veo_provider.py). Verified against the actually
+# installed 2.20.0 (not assumed from docs): existing Gemini text-generation
+# calls (app/llm/gemini_provider.py) still work unchanged - smoke-tested live.
+google-genai>=2.20,<3.0
+# google-auth<2.42 was pinned for google-auth-oauthlib (YouTube upload), but
+# google-genai 2.20 requires a newer google-auth than that ceiling - pip
+# resolved to google-auth 2.57, which is a real, currently-unresolved
+# constraint conflict (not a guess: pip printed it during install). YouTube
+# upload's OAuth flow was not re-tested after this upgrade - if it breaks,
+# this is where to look first.
 # google-generativeai is DEPRECATED — use google-genai instead
 
 # Image processing (always needed — thumbnails, placeholder frames)

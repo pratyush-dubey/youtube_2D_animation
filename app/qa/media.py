@@ -12,6 +12,7 @@ import numpy as np
 
 from app.config.settings import settings
 from app.metadata.sanitizer import sanitize_metadata_payload
+from app.qa.generative_motion import inspect_generative_motion
 from app.timeline.master import measure_audio_duration, validate_master_timeline
 
 
@@ -31,6 +32,7 @@ def inspect_render(
     if not video_path.is_file():
         raise FileNotFoundError(video_path)
     motion = _motion_metrics(video_path, character_roi)
+    generative_motion = inspect_generative_motion(video_path)
     media = _probe(video_path)
     expected = float(timeline["duration"])
     audio_duration = float(media.get("audio_duration") or 0.0)
@@ -67,10 +69,13 @@ def inspect_render(
                 "longest_black_seconds": motion["longest_black_seconds"],
             },
             "character_motion": {
-                "passed": bool(required_action_scores) and character_score >= 0.006,
+                "passed": (bool(required_action_scores) and character_score >= 0.006
+                           and generative_motion["passed"]),
                 "score": character_score,
                 "aggregation": "minimum 80th-percentile localized motion across character-required shots",
                 "camera_motion_is_not_character_motion": True,
+                "camera_compensated_nonrigid_motion": generative_motion["rig_articulation"],
+                "fake_translation_detected": generative_motion["fake_translation_detected"],
             },
             "environment_motion": {
                 "passed": motion["environment_motion_score"] >= 0.002,
@@ -100,6 +105,7 @@ def inspect_render(
     }
     report["passed"] = all(gate["passed"] for gate in report["gates"].values())
     report["motion_samples"] = motion["samples"]
+    report["motion_report"] = {k: v for k, v in generative_motion.items() if k != "samples"}
     if output_path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(json.dumps(report, indent=2), encoding="utf-8")

@@ -1,0 +1,6 @@
+=== retrying Kao with grey-padding fix ===
+2026-08-27 01:34:54 [warning  ] character_illustration_pollinations_attempt_failed attempt=kontext character='Rameshwar Nath Kao' error='HTTP Error 500: Internal Server Error'
+2026-08-27 01:34:55 [info     ] CHARACTER_GENERATION_REQUEST   method=POST stage=comfyui_submission url=http://127.0.0.1:8188/prompt
+2026-08-27 01:49:56 [warning  ] character_illustration_failed  character='Rameshwar Nath Kao' error='Local diffusion generation failed. No substitute character was generated. ComfyUI error: Workflow 91999d4f-9b19-4b7a-ac0d-88a580c739aa exceeded 900s'
+rig_manifest: MISSING
+DONE

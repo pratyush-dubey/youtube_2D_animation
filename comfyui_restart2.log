@@ -1,0 +1,52 @@
+Total VRAM 16136 MB, total RAM 16136 MB
+pytorch version: 2.4.1+cpu
+Set vram state to: DISABLED
+Device: cpu
+Using sub quadratic optimization for cross attention, if you have memory or speed issues try using: --use-split-cross-attention
+Setting temp directory to: D:\AI_VIDEO_GENERATOR\temp\temp
+[Prompt Server] web root: D:\AI_VIDEO_GENERATOR\ComfyUI\web
+Adding extra search path checkpoints D:/AI_VIDEO_GENERATOR/models/checkpoints/
+Adding extra search path loras D:/AI_VIDEO_GENERATOR/models/loras/
+Adding extra search path controlnet D:/AI_VIDEO_GENERATOR/models/controlnet/
+Adding extra search path vae D:/AI_VIDEO_GENERATOR/models/vae/
+Adding extra search path embeddings D:/AI_VIDEO_GENERATOR/models/embeddings/
+
+Import times for custom nodes:
+   0.0 seconds: D:\AI_VIDEO_GENERATOR\ComfyUI\custom_nodes\websocket_image_save.py
+
+Setting output directory to: D:\AI_VIDEO_GENERATOR\output
+Setting input directory to: D:\AI_VIDEO_GENERATOR\input
+Setting user directory to: D:\AI_VIDEO_GENERATOR\user
+Starting server
+
+To see the GUI go to: http://127.0.0.1:8188
+fatal: No names found, cannot describe anything.
+Failed to get ComfyUI version: Command '['git', 'describe', '--tags']' returned non-zero exit status 128.
+fatal: No names found, cannot describe anything.
+Failed to get ComfyUI version: Command '['git', 'describe', '--tags']' returned non-zero exit status 128.
+fatal: No names found, cannot describe anything.
+Failed to get ComfyUI version: Command '['git', 'describe', '--tags']' returned non-zero exit status 128.
+fatal: No names found, cannot describe anything.
+Failed to get ComfyUI version: Command '['git', 'describe', '--tags']' returned non-zero exit status 128.
+got prompt
+model weight dtype torch.float32, manual cast: None
+model_type EPS
+Using split attention in VAE
+Using split attention in VAE
+D:\AI_VIDEO_GENERATOR\venvs\comfyui\Lib\site-packages\transformers\tokenization_utils_base.py:1601: FutureWarning: `clean_up_tokenization_spaces` was not set. It will be set to `True` by default. This behavior will be depracted in transformers v4.45, and will be then set to `False` by default. For more details check this issue: https://github.com/huggingface/transformers/issues/31884
+  warnings.warn(
+Requested to load SD1ClipModel
+Loading 1 new model
+loaded completely 0.0 235.84423828125 True
+Requested to load AutoencoderKL
+Loading 1 new model
+loaded completely 0.0 319.11416244506836 True
+Requested to load BaseModel
+Loading 1 new model
+loaded completely 0.0 3278.812271118164 True
+  0%|          | 0/12 [00:00<?, ?it/s]  8%|8         | 1/12 [00:23<04:17, 23.44s/it] 17%|#6        | 2/12 [00:46<03:49, 22.98s/it] 25%|##5       | 3/12 [01:09<03:26, 22.96s/it] 33%|###3      | 4/12 [01:33<03:09, 23.68s/it] 42%|####1     | 5/12 [02:04<03:02, 26.04s/it] 50%|#####     | 6/12 [02:41<02:59, 29.85s/it] 58%|#####8    | 7/12 [03:36<03:11, 38.26s/it] 67%|######6   | 8/12 [04:09<02:25, 36.39s/it] 75%|#######5  | 9/12 [04:46<01:50, 36.75s/it] 83%|########3 | 10/12 [05:16<01:09, 34.52s/it] 92%|#########1| 11/12 [06:01<00:37, 37.81s/it]100%|##########| 12/12 [06:31<00:00, 35.49s/it]100%|##########| 12/12 [06:31<00:00, 32.65s/it]
+Prompt executed in 448.73 seconds
+fatal: No names found, cannot describe anything.
+Failed to get ComfyUI version: Command '['git', 'describe', '--tags']' returned non-zero exit status 128.
+fatal: No names found, cannot describe anything.
+Failed to get ComfyUI version: Command '['git', 'describe', '--tags']' returned non-zero exit status 128.

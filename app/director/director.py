@@ -302,8 +302,14 @@ class TimelineDirector(SpecializedDirector):
         # at the cost of continuity of blocking.
         groups: list[list[dict]] = []
         for shot in timeline["shots"]:
-            key = shot.get("section_id") or shot["shot_id"]
-            if groups and (groups[-1][0].get("section_id") or groups[-1][0]["shot_id"]) == key:
+            # Veo accepts bounded 4/6/8-second shots. Keep narration/action
+            # beats separate instead of grouping an entire section into a clip
+            # too long for the provider or asking one generation to perform a
+            # montage of unrelated actions.
+            key = shot["shot_id"] if settings.render_provider == "veo" else (shot.get("section_id") or shot["shot_id"])
+            previous_key = (groups[-1][0]["shot_id"] if settings.render_provider == "veo"
+                            else (groups[-1][0].get("section_id") or groups[-1][0]["shot_id"])) if groups else None
+            if groups and previous_key == key:
                 groups[-1].append(shot)
             else:
                 groups.append([shot])
@@ -340,7 +346,22 @@ class TimelineDirector(SpecializedDirector):
                 "scene_id": index, "duration_seconds": duration_seconds,
                 "narration": " ".join(shot["narration_segment"]["text"] for shot in group),
                 "visual_description": f"{scene_subject}; {character_id} performs {primary_action}",
-                "image_prompt": f"AI reconstruction, {scene_subject}, full-body {character_id}, action-ready composition, no text",
+                # No "full-body {character_id}" here: AssetAgent._prepare_scene_asset
+                # (below) always appends "Environment plate only, no people" to this
+                # exact prompt whenever character_motion+character_name are set - which
+                # is every scene in this pipeline. Asking for the named character's
+                # full body AND "no people" in the same prompt is self-contradictory;
+                # image models resolve that by half-painting a warped, oversized ghost
+                # figure into what's supposed to be a person-free background plate
+                # (confirmed live: output/aefef288/scenes/scene_001.mp4). The character
+                # is always composited separately from the rig - the plate should
+                # describe the setting only, never the person.
+                "image_prompt": (
+                    f"AI reconstruction, {scene_subject}, complete cinematic first keyframe: "
+                    f"{character_id} ready to {primary_action}, natural full-body anatomy, environment and props, no text"
+                    if settings.render_provider == "veo"
+                    else f"AI reconstruction, {scene_subject}, cinematic environment for a {primary_action} scene, no people, no text"
+                ),
                 "visual_type": lead["visual_type"], "still_image_shot": lead["still_image_shot"],
                 # AssetAgent._prepare_scene_asset only attaches character_rig_manifest
                 # (and runs the asset quality gate) for DRAFT/PRODUCTION scenes; a
@@ -359,6 +380,19 @@ class TimelineDirector(SpecializedDirector):
                 ],
                 "shots": sub_shots,
             })
+        # VoiceAgent synthesizes and keys context.narration_files by the
+        # per-sentence scene_id (1..N sentences) - the numbering that existed
+        # before this grouping step collapsed multiple sentences into fewer,
+        # larger scenes with their OWN 1..len(groups) scene_id sequence. Left
+        # alone, VideoEditAgent's context.narration_files.get(scene["scene_id"])
+        # would look up a grouped scene_id against the old per-sentence keys:
+        # since both numberings start at 1, most scenes would silently get
+        # some other sentence's audio (or none), playing the wrong short clip
+        # then padding the rest of the (now longer) scene with silence. Concat
+        # each group's member sentence audio into one track per grouped scene
+        # and rekey narration_files to match, so audio granularity tracks the
+        # same grouping the visuals just moved to.
+        context.narration_files = _grouped_narration_files(groups, context.output_dir)
         context.storyboard = scenes
         storyboard = {
             "storyboard_version": 5, "clock": "measured_narration_seconds",
@@ -370,6 +404,40 @@ class TimelineDirector(SpecializedDirector):
             json.dumps({"schema_version": "2.0", "shots": timeline["shots"]}, indent=2), encoding="utf-8",
         )
         return timeline
+
+
+def _grouped_narration_files(groups: list[list[dict]], output_dir: Path) -> dict[int, Path]:
+    """One narration audio file per grouped scene, matching context.storyboard's
+    scene_id numbering (1..len(groups)) rather than VoiceAgent's original
+    per-sentence numbering.
+    """
+    import subprocess
+
+    narration_dir = output_dir / "audio" / "narration_scenes"
+    narration_dir.mkdir(parents=True, exist_ok=True)
+    result: dict[int, Path] = {}
+    for index, group in enumerate(groups, 1):
+        member_paths = [Path(str(shot["narration_segment"]["audio_path"])) for shot in group]
+        if len(member_paths) == 1:
+            result[index] = member_paths[0]
+            continue
+        combined = narration_dir / f"scene_{index:03d}.wav"
+        list_file = narration_dir / f"scene_{index:03d}_concat.txt"
+        list_file.write_text(
+            "".join(f"file '{p.resolve().as_posix()}'\n" for p in member_paths), encoding="utf-8",
+        )
+        proc = subprocess.run(
+            [
+                settings.ffmpeg_path, "-y", "-hide_banner", "-loglevel", "error",
+                "-f", "concat", "-safe", "0", "-i", str(list_file),
+                "-c:a", "pcm_s16le", str(combined),
+            ],
+            capture_output=True, text=True,
+        )
+        if proc.returncode or not combined.is_file():
+            raise RuntimeError(f"Failed to concatenate narration for scene {index}: {proc.stderr[-500:]}")
+        result[index] = combined
+    return result
 
 
 class MusicDirector(SpecializedDirector):

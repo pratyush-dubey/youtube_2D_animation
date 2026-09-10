@@ -30,7 +30,19 @@ logger = structlog.get_logger(__name__)
 
 
 def is_retryable_exception(exc: Exception) -> bool:
-    """Classify transient failures across an exception cause chain."""
+    """Classify transient failures across an exception cause chain.
+
+    Retry by default; only refuse for signatures we can confidently call
+    permanent. This used to be the other way around - retry only for an
+    explicit allowlist of network-sounding phrases - which meant any local
+    subprocess crash (a flaky Piper/ComfyUI/FFmpeg invocation, none of which
+    say "timeout" or "connection refused") was classified as non-retryable
+    and gave up after a single attempt regardless of max_retries. That
+    included a Piper CLI crash (`wave.Error: # channels not specified`)
+    confirmed transient by simply retrying the exact same call, which
+    real users had to do by hand via the UI's Retry button - exactly the
+    kind of failure max_retries exists to absorb automatically.
+    """
     messages = []
     current: BaseException | None = exc
     seen: set[int] = set()
@@ -43,15 +55,9 @@ def is_retryable_exception(exc: Exception) -> bool:
         "resource_exhausted", "quota exceeded", "permission_denied",
         "unauthenticated", "invalid api key", "model not found",
         "invalid workflow", "checkpoint not found", "content safety",
+        "not configured", "not installed",
     )
-    if any(token in text for token in terminal):
-        return False
-    transient = (
-        "timeout", "timed out", "connection refused", "unreachable",
-        "temporarily unavailable", "connectionerror", "502", "503", "504",
-        "rate limit", "too many requests",
-    )
-    return any(token in text for token in transient)
+    return not any(token in text for token in terminal)
 
 
 @dataclass

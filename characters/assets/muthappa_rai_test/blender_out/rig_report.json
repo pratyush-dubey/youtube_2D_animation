@@ -1,0 +1,33 @@
+{
+  "rig_source": "characters\\assets\\muthappa_rai_test\\rig\\rig.json",
+  "output": "characters\\assets\\muthappa_rai_test\\blender_out\\rig_test.blend",
+  "parts_built": 19,
+  "parts_skipped": [],
+  "bones": 24,
+  "bone_names": [
+    "ankle_l",
+    "ankle_r",
+    "chest",
+    "elbow_l",
+    "elbow_r",
+    "head",
+    "hip_l",
+    "hip_r",
+    "hips",
+    "ik_pole_ankle_l",
+    "ik_pole_ankle_r",
+    "ik_pole_wrist_l",
+    "ik_pole_wrist_r",
+    "ik_target_ankle_l",
+    "ik_target_ankle_r",
+    "ik_target_wrist_l",
+    "ik_target_wrist_r",
+    "knee_l",
+    "knee_r",
+    "neck",
+    "shoulder_l",
+    "shoulder_r",
+    "wrist_l",
+    "wrist_r"
+  ]
+}

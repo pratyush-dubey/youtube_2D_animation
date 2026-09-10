@@ -80,7 +80,8 @@ class AssetAgent(Agent):
                 scene_text,
                 str(scene.get("character_name") or ""),
             )
-            if scene.get("character_motion") and scene.get("character_name"):
+            if (scene.get("character_motion") and scene.get("character_name")
+                    and settings.render_provider != "veo"):
                 position = str(scene.get("character_position", "right"))
                 prompt += (
                     f". Environment plate only, no people or human figures. Leave open "
@@ -109,7 +110,8 @@ class AssetAgent(Agent):
                 continue
 
             generation_references = (
-                [] if scene.get("character_motion") else character_references
+                [] if scene.get("character_motion") and settings.render_provider != "veo"
+                else character_references
             )
             path = self._generate_image(
                 prompt,
@@ -158,8 +160,12 @@ class AssetAgent(Agent):
         visual_manifest = {
             "project_id": context.project_id,
             "provider": settings.image_provider.lower(),
-            "architecture": "environment_diffusion_plus_2d_2_5d_character_compositing",
-            "reference_conditioning": False,
+            "architecture": (
+                "identity_conditioned_keyframe_plus_generative_video"
+                if settings.render_provider == "veo"
+                else "environment_diffusion_plus_2d_2_5d_character_compositing"
+            ),
+            "reference_conditioning": settings.render_provider == "veo",
             "scenes": [],
         }
         generated: dict[int, Path] = {}
@@ -194,7 +200,8 @@ class AssetAgent(Agent):
             char_hints = [visual for name, visual in char_visuals.items() if name.lower() in scene_text]
             manifest_shot["characters"] = [name for name in char_visuals if name.lower() in scene_text]
             references = _scene_character_references(context.character_sheet, scene_text, str(scene.get("character_name") or ""))
-            if scene.get("character_motion") and scene.get("character_name"):
+            if (scene.get("character_motion") and scene.get("character_name")
+                    and settings.render_provider != "veo"):
                 position = str(scene.get("character_position", "right"))
                 prompt += f". Environment plate only, no people. Leave open foreground space on the {position} for the approved character asset"
                 generation_references = []
@@ -202,6 +209,13 @@ class AssetAgent(Agent):
                 generation_references = references
                 if char_hints:
                     prompt += ". Character refs: " + "; ".join(char_hints)
+                if settings.render_provider == "veo" and scene.get("character_motion"):
+                    prompt += (
+                        ". Create the complete approved first keyframe including the character, "
+                        "environment, props, and contact surfaces. Full natural anatomy; keep limbs "
+                        "clear enough for the requested physical action. This frame will be animated "
+                        "by an image-to-video model, so do not make an environment-only plate"
+                    )
             for label in ("camera", "lighting", "composition", "action"):
                 if manifest_shot[label]:
                     prompt += f". {label.title()}: {manifest_shot[label]}"

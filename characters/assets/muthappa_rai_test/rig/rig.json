@@ -1,0 +1,464 @@
+{
+  "rig_version": 3,
+  "canvas_size": [
+    952,
+    1653
+  ],
+  "source_bbox": [
+    190,
+    30,
+    751,
+    1622
+  ],
+  "source_path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\master.png",
+  "representation": "segmented_artwork_skeleton",
+  "manual_correction_supported": true,
+  "joints": {
+    "hips": [
+      470.5,
+      929.4799999999999
+    ],
+    "spine": [
+      470.5,
+      666.8000000000001
+    ],
+    "chest": [
+      470.5,
+      467.8
+    ],
+    "neck": [
+      470.5,
+      372.28
+    ],
+    "head": [
+      470.5,
+      324.52
+    ],
+    "mouth": [
+      470.5,
+      287.904
+    ],
+    "shoulder_l": [
+      389.155,
+      467.8
+    ],
+    "elbow_l": [
+      358.29999999999995,
+      706.6
+    ],
+    "wrist_l": [
+      338.665,
+      913.5600000000001
+    ],
+    "shoulder_r": [
+      551.845,
+      467.8
+    ],
+    "elbow_r": [
+      582.7,
+      706.6
+    ],
+    "wrist_r": [
+      602.335,
+      913.5600000000001
+    ],
+    "hip_l": [
+      439.645,
+      929.4799999999999
+    ],
+    "knee_l": [
+      428.42499999999995,
+      1231.96
+    ],
+    "ankle_l": [
+      417.20500000000004,
+      1470.76
+    ],
+    "toe_l": [
+      383.54499999999996,
+      1550.36
+    ],
+    "hip_r": [
+      501.355,
+      929.4799999999999
+    ],
+    "knee_r": [
+      512.575,
+      1231.96
+    ],
+    "ankle_r": [
+      523.795,
+      1470.76
+    ],
+    "toe_r": [
+      557.455,
+      1550.36
+    ]
+  },
+  "parents": {
+    "torso": null,
+    "clothing": "torso",
+    "neck": "torso",
+    "head": "neck",
+    "hair": "head",
+    "eyes": "head",
+    "eyebrows": "head",
+    "mouth": "head",
+    "left_upper_arm": "torso",
+    "left_lower_arm": "left_upper_arm",
+    "left_hand": "left_lower_arm",
+    "right_upper_arm": "torso",
+    "right_lower_arm": "right_upper_arm",
+    "right_hand": "right_lower_arm",
+    "left_upper_leg": "torso",
+    "left_lower_leg": "left_upper_leg",
+    "left_foot": "left_lower_leg",
+    "right_upper_leg": "torso",
+    "right_lower_leg": "right_upper_leg",
+    "right_foot": "right_lower_leg"
+  },
+  "parts": {
+    "head": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\rig\\head.png",
+      "position": [
+        273,
+        40
+      ],
+      "size": [
+        445,
+        332
+      ],
+      "pivot": [
+        0.5,
+        0.9
+      ],
+      "joint": "neck",
+      "parent": "neck",
+      "visible": true
+    },
+    "neck": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\rig\\neck.png",
+      "position": [
+        417,
+        342
+      ],
+      "size": [
+        108,
+        109
+      ],
+      "pivot": [
+        0.5,
+        0.82
+      ],
+      "joint": "chest",
+      "parent": "torso",
+      "visible": true
+    },
+    "torso": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\rig\\torso.png",
+      "position": [
+        366,
+        342
+      ],
+      "size": [
+        232,
+        643
+      ],
+      "pivot": [
+        0.5,
+        0.56
+      ],
+      "joint": "hips",
+      "parent": null,
+      "visible": true
+    },
+    "hair": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\rig\\hair.png",
+      "position": [
+        395,
+        30
+      ],
+      "size": [
+        153,
+        119
+      ],
+      "pivot": [
+        0.5,
+        0.9
+      ],
+      "joint": "head",
+      "parent": "head",
+      "visible": true
+    },
+    "eyes": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\rig\\eyes.png",
+      "position": [
+        403,
+        135
+      ],
+      "size": [
+        136,
+        105
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "joint": "head",
+      "parent": "head",
+      "visible": true
+    },
+    "eyebrows": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\rig\\eyebrows.png",
+      "position": [
+        408,
+        119
+      ],
+      "size": [
+        126,
+        78
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "joint": "head",
+      "parent": "head",
+      "visible": true
+    },
+    "mouth": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\rig\\mouth.png",
+      "position": [
+        431,
+        246
+      ],
+      "size": [
+        80,
+        83
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "joint": "head",
+      "parent": "head",
+      "visible": true
+    },
+    "left_upper_arm": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\rig\\left_upper_arm.png",
+      "position": [
+        213,
+        342
+      ],
+      "size": [
+        183,
+        340
+      ],
+      "pivot": [
+        0.86,
+        0.1
+      ],
+      "joint": "shoulder_l",
+      "parent": "torso",
+      "visible": true
+    },
+    "left_lower_arm": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\rig\\left_lower_arm.png",
+      "position": [
+        190,
+        652
+      ],
+      "size": [
+        206,
+        253
+      ],
+      "pivot": [
+        0.6,
+        0.08
+      ],
+      "joint": "elbow_l",
+      "parent": "left_upper_arm",
+      "visible": true
+    },
+    "left_hand": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\rig\\left_hand.png",
+      "position": [
+        190,
+        875
+      ],
+      "size": [
+        206,
+        110
+      ],
+      "pivot": [
+        0.55,
+        0.08
+      ],
+      "joint": "wrist_l",
+      "parent": "left_lower_arm",
+      "visible": true
+    },
+    "right_upper_arm": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\rig\\right_upper_arm.png",
+      "position": [
+        568,
+        342
+      ],
+      "size": [
+        183,
+        340
+      ],
+      "pivot": [
+        0.14,
+        0.1
+      ],
+      "joint": "shoulder_r",
+      "parent": "torso",
+      "visible": true
+    },
+    "right_lower_arm": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\rig\\right_lower_arm.png",
+      "position": [
+        568,
+        652
+      ],
+      "size": [
+        182,
+        253
+      ],
+      "pivot": [
+        0.4,
+        0.08
+      ],
+      "joint": "elbow_r",
+      "parent": "right_upper_arm",
+      "visible": true
+    },
+    "right_hand": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\rig\\right_hand.png",
+      "position": [
+        568,
+        875
+      ],
+      "size": [
+        141,
+        110
+      ],
+      "pivot": [
+        0.45,
+        0.08
+      ],
+      "joint": "wrist_r",
+      "parent": "right_lower_arm",
+      "visible": true
+    },
+    "left_upper_leg": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\rig\\left_upper_leg.png",
+      "position": [
+        297,
+        955
+      ],
+      "size": [
+        200,
+        300
+      ],
+      "pivot": [
+        0.7,
+        0.06
+      ],
+      "joint": "hip_l",
+      "parent": "torso",
+      "visible": true
+    },
+    "left_lower_leg": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\rig\\left_lower_leg.png",
+      "position": [
+        276,
+        1225
+      ],
+      "size": [
+        168,
+        253
+      ],
+      "pivot": [
+        0.58,
+        0.06
+      ],
+      "joint": "knee_l",
+      "parent": "left_upper_leg",
+      "visible": true
+    },
+    "left_foot": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\rig\\left_foot.png",
+      "position": [
+        199,
+        1448
+      ],
+      "size": [
+        227,
+        129
+      ],
+      "pivot": [
+        0.55,
+        0.08
+      ],
+      "joint": "ankle_l",
+      "parent": "left_lower_leg",
+      "visible": true
+    },
+    "right_upper_leg": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\rig\\right_upper_leg.png",
+      "position": [
+        467,
+        955
+      ],
+      "size": [
+        209,
+        300
+      ],
+      "pivot": [
+        0.3,
+        0.06
+      ],
+      "joint": "hip_r",
+      "parent": "torso",
+      "visible": true
+    },
+    "right_lower_leg": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\rig\\right_lower_leg.png",
+      "position": [
+        517,
+        1225
+      ],
+      "size": [
+        162,
+        253
+      ],
+      "pivot": [
+        0.42,
+        0.06
+      ],
+      "joint": "knee_r",
+      "parent": "right_upper_leg",
+      "visible": true
+    },
+    "right_foot": {
+      "path": "C:\\Users\\Lenovo\\OneDrive\\Documents\\GitHub\\FastFoodDelivery\\zomato_clone-master\\youtube_2D_animation\\characters\\assets\\muthappa_rai_test\\rig\\right_foot.png",
+      "position": [
+        541,
+        1448
+      ],
+      "size": [
+        144,
+        174
+      ],
+      "pivot": [
+        0.45,
+        0.08
+      ],
+      "joint": "ankle_r",
+      "parent": "right_lower_leg",
+      "visible": true
+    }
+  }
+}

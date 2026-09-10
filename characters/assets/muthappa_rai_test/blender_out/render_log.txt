@@ -1,0 +1,12 @@
+00:01.860  blend            | Read blend: "C:\Users\Lenovo\OneDrive\Documents\GitHub\FastFoodDelivery\zomato_clone-master\youtube_2D_animation\characters\assets\muthappa_rai_test\blender_out\rig_test.blend"
+C:\Users\Lenovo\OneDrive\Documents\GitHub\FastFoodDelivery\zomato_clone-master\youtube_2D_animation\blender_worker\render_still.py:19: DeprecationWarning: 'World.use_nodes' is expected to be removed in Blender 6.0
+  scene.world.use_nodes = True
+00:56.141  render           | Saved: 'C:\characters\assets\muthappa_rai_test\blender_out\rest_pose.png'
+[INFO ] services.locationservice ...............: Not adding link to MakeHuman user data, since neither explicit path nor auto-discovery is set in preferences.
+[INFO ] mpfb.init ..............................: Build info 20260722
+[INFO ] mpfb.init ..............................: Online access preference is not enabled. Not checking if MakeHuman is online.
+[INFO ] mpfb.init ..............................: MPFB initialization has finished.
+rendered characters/assets/muthappa_rai_test/blender_out/rest_pose.png
+Blender 5.2.0 LTS (hash fbe6228777e7 built 2026-07-14 01:35:40)
+
+Blender quit

@@ -88,6 +88,8 @@ def test_background_removal_and_rig_extraction(tmp_path):
     assert manifest.exists()
     rig = __import__("json").loads(manifest.read_text(encoding="utf-8"))
     assert rig["rig_version"] == 3
+    assert rig["representation"] == "segmented_artwork_skeleton"
+    assert {"hips", "knee_l", "ankle_r", "shoulder_l"} <= set(rig["joints"])
     assert {"head", "torso", "left_upper_leg", "left_lower_leg", "right_upper_arm"} <= set(rig["parts"])
     assert "mouth" in rig["joints"]
 

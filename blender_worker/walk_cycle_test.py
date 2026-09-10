@@ -47,10 +47,26 @@ scene.frame_end = frame_count
 # 0.10 unit swing was geometrically guaranteed to cross to the opposite
 # side - it's not a tuning nicety, the numbers don't fit otherwise. Wrists
 # have more margin (~0.08-0.10) but share the same constraint.
-STEP_LEN = 0.015   # how far forward/back a foot swings, world units
-LIFT = 0.025       # how high the swinging foot lifts
-ARM_SWING = 0.03
-HIP_BOB = 0.015
+#
+# The first real render at 0.015/0.025/0.03/0.015 was numerically real
+# (measured ~90-100k changed pixels between neutral and peak-swing frames,
+# confirmed via pixel diff) but read as barely-perceptible on screen -
+# correct motion, wrong scale. Pushed up toward the ~0.10 midline-crossing
+# ceiling (still leaving real margin) rather than all the way to it.
+#
+# ARM_SWING=0.07 (rendered and inspected) rotated the hand far enough
+# backward to expose its dilated overlap-padding edge past the jacket
+# sleeve/torso silhouette - a real depth-ordering artifact (these are flat
+# planes with a fixed front/back stacking order, not true pose-dependent
+# occlusion), visible as a small duplicate-looking hand fragment beside the
+# hip. Legs at the equivalent larger amplitude were confirmed clean (verified
+# by inspecting a cropped render), so only arm swing is pulled back here -
+# this is a real limitation of the current fixed part-ordering rig, not
+# fixed, just avoided by staying under the angle that exposes it.
+STEP_LEN = 0.045   # how far forward/back a foot swings, world units
+LIFT = 0.05        # how high the swinging foot lifts
+ARM_SWING = 0.04
+HIP_BOB = 0.025
 
 
 bpy.context.preferences.edit.keyframe_new_interpolation_type = "SINE"
